@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TexFab ERP — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.19.0/fonts/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== TOAST ===== -->
+<div id="toast"></div>
+
+<!-- ===== APP ===== -->
+<div class="app">
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="brand">
+    <div class="brand-icon">🏭</div>
+    <div><div class="brand-name">TexFab ERP</div><div class="brand-sub">Manufacturing Suite</div></div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Overview</div>
+    <div class="nav-item" data-panel="dashboard" onclick="navTo('dashboard')"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Masters</div>
+    <div class="nav-item" data-panel="material" onclick="navTo('material')"><i class="ti ti-package"></i>Material Master</div>
+    <div class="nav-item" data-panel="supplier" onclick="navTo('supplier')"><i class="ti ti-truck"></i>Supplier Master</div>
+    <div class="nav-item" data-panel="processor" onclick="navTo('processor')"><i class="ti ti-settings-2"></i>Processor Master</div>
+    <div class="nav-item" data-panel="jobworker" onclick="navTo('jobworker')"><i class="ti ti-tools"></i>Job Worker Master</div>
+    <div class="nav-item" data-panel="customer" onclick="navTo('customer')"><i class="ti ti-users"></i>Customer Master</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Transactions</div>
+    <div class="nav-item" data-panel="purchase" onclick="navTo('purchase')"><i class="ti ti-shopping-cart"></i>Purchase</div>
+    <div class="nav-item" data-panel="stock" onclick="navTo('stock')"><i class="ti ti-stack-2"></i>Stock</div>
+    <div class="nav-item" data-panel="transfer" onclick="navTo('transfer')"><i class="ti ti-switch-2"></i>Material Transfer</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Processing</div>
+    <div class="nav-item" data-panel="dyeing" onclick="navTo('dyeing')"><i class="ti ti-color-swatch"></i>Dyeing Orders</div>
+    <div class="nav-item" data-panel="lamination" onclick="navTo('lamination')"><i class="ti ti-layers-intersect"></i>Lamination Orders</div>
+    <div class="nav-item" data-panel="jobwork" onclick="navTo('jobwork')"><i class="ti ti-briefcase"></i>Job Work</div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Analytics</div>
+    <div class="nav-item" data-panel="reports" onclick="navTo('reports')"><i class="ti ti-chart-bar"></i>Reports</div>
+    <div class="nav-item" data-panel="users" onclick="navTo('users')"><i class="ti ti-users-group"></i>User Management</div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="page-title" id="ptitle">Dashboard</div>
+    <div class="tb-actions">
+      <button class="tb-btn"><i class="ti ti-bell"></i></button>
+      <div class="user-chip">
+        <div class="user-name" id="user-name">Loading...</div>
+        <span class="role-tag" id="user-role"></span>
+        <div class="user-avatar" id="user-initials">?</div>
+      </div>
+      <button class="tb-btn" onclick="doLogout()"><i class="ti ti-logout"></i> Logout</button>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- ══════════ DASHBOARD ══════════ -->
+    <div class="panel" id="p-dashboard">
+      <div class="kpi-grid g8">
+        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Factory Stock</div><div class="kpi-val" id="kpi-factory">—</div><div class="kpi-sub">Kg at factory &amp; warehouses</div></div>
+        <div class="kpi" style="--ka:var(--purple)"><div class="kpi-label">At Dyeing Houses</div><div class="kpi-val" id="kpi-dyeing">—</div><div class="kpi-sub">Kg pending return</div></div>
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">At Lamination</div><div class="kpi-val" id="kpi-lam">—</div><div class="kpi-sub">Kg pending return</div></div>
+        <div class="kpi" style="--ka:var(--coral,#ff7a5c)"><div class="kpi-label">At Job Workers</div><div class="kpi-val" id="kpi-jw">—</div><div class="kpi-sub">Kg pending return</div></div>
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Open POs</div><div class="kpi-val" id="kpi-pending-po">—</div><div class="kpi-sub">Pending receipt / approval</div></div>
+        <div class="kpi" style="--ka:var(--red)"><div class="kpi-label">Low Stock Items</div><div class="kpi-val" id="kpi-lowstock">—</div><div class="kpi-sub">Below reorder level</div></div>
+      </div>
+      <div class="g2">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head"><div><div class="card-title">Stock by Location</div><div class="card-sub">Live — updates in real time</div></div></div>
+          <div class="bar-list" id="location-bars"><div class="c-muted" style="padding:20px;text-align:center">Loading...</div></div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head"><div class="card-title">Low Stock Alerts</div></div>
+          <div class="alert-list" id="alert-list"><div class="c-muted" style="padding:20px;text-align:center">Loading...</div></div>
+        </div>
+      </div>
+      <div class="g2" style="margin-top:14px">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head"><div class="card-title">Recent Transactions</div><span style="font-size:11px;color:var(--text-muted)">Live</span></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Material</th><th>Qty</th><th>Status</th></tr></thead><tbody id="recent-txn-body"><tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Loading...</td></tr></tbody></table></div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head"><div class="card-title">Processor-wise Pending</div></div>
+          <div class="tbl-wrap"><table><thead><tr><th>Processor / Worker</th><th>Qty Pending</th><th>Status</th></tr></thead><tbody id="proc-pending-body"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:20px">Loading...</td></tr></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ MATERIAL MASTER ══════════ -->
+    <div class="panel" id="p-material">
+      <div class="sec-head">
+        <div class="sec-title">Material Master</div>
+        <div class="sec-actions">
+          <button class="btn btn-primary" onclick="openAddMaterial()"><i class="ti ti-plus"></i> Add Material</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>GSM</th><th>Width</th><th>Unit</th><th>Stock</th><th>Reorder Level</th><th>GST%</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="mat-tbody"><tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ SUPPLIER MASTER ══════════ -->
+    <div class="panel" id="p-supplier">
+      <div class="sec-head">
+        <div class="sec-title">Supplier Master</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddSupplier()"><i class="ti ti-plus"></i> Add Supplier</button></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Supplier Name</th><th>GST No.</th><th>Contact</th><th>Phone</th><th>Payment Terms</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="sup-tbody"><tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ PROCESSOR MASTER ══════════ -->
+    <div class="panel" id="p-processor">
+      <div class="sec-head">
+        <div class="sec-title">Processor Master</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddProcessor()"><i class="ti ti-plus"></i> Add Processor</button></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Processor Name</th><th>Type</th><th>Contact</th><th>Phone</th><th>Lead Time</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="proc-tbody"><tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ JOB WORKER MASTER ══════════ -->
+    <div class="panel" id="p-jobworker">
+      <div class="sec-head">
+        <div class="sec-title">Job Worker Master</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddJobWorker()"><i class="ti ti-plus"></i> Add Job Worker</button></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Worker Name</th><th>Work Type</th><th>Contact</th><th>Rate</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="jw-master-tbody"><tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ CUSTOMER MASTER ══════════ -->
+    <div class="panel" id="p-customer">
+      <div class="sec-head">
+        <div class="sec-title">Customer Master</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddCustomer()"><i class="ti ti-plus"></i> Add Customer</button></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Customer Name</th><th>GST No.</th><th>Contact</th><th>Phone</th><th>Payment Terms</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="cust-tbody"><tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ PURCHASE ══════════ -->
+    <div class="panel" id="p-purchase">
+      <div class="sec-head">
+        <div class="sec-title">Purchase Management</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddPO()"><i class="ti ti-plus"></i> New PO</button></div>
+      </div>
+      <div class="kpi-grid g4">
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Open POs</div><div class="kpi-val" id="po-open-count">—</div></div>
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">Pending GRN</div><div class="kpi-val" id="po-pending-grn">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">Purchase Orders</div></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>PO No.</th><th>Date</th><th>Supplier</th><th>Material</th><th>Ordered</th><th>Received</th><th>Balance</th><th>Value</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="po-tbody"><tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ STOCK ══════════ -->
+    <div class="panel" id="p-stock">
+      <div class="sec-head">
+        <div class="sec-title">Stock Management</div>
+        <div class="sec-actions"><button class="btn btn-secondary" onclick="generateReport('Stock Summary')"><i class="ti ti-download"></i> Export</button></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">Stock Ledger — All Locations</div><span style="font-size:11px;color:var(--text-muted)">Real-time</span></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Material</th><th>Location</th><th>Batch</th><th>Lot No.</th><th>Stock In</th><th>Stock Out</th><th>Balance</th><th>Type</th><th>Reference</th></tr></thead>
+            <tbody id="stock-tbody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ TRANSFER ══════════ -->
+    <div class="panel" id="p-transfer">
+      <div class="sec-head">
+        <div class="sec-title">Material Transfer</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddTransfer()"><i class="ti ti-plus"></i> New Transfer</button></div>
+      </div>
+      <div class="kpi-grid g4">
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Open Challans</div><div class="kpi-val" id="tc-open">—</div></div>
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">Pending Receipt</div><div class="kpi-val" id="tc-pending">—</div></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>TC No.</th><th>Date</th><th>From</th><th>To</th><th>Material</th><th>Sent Qty</th><th>Received Qty</th><th>Wastage</th><th>Exp. Return</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="tc-tbody"><tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ DYEING ORDERS ══════════ -->
+    <div class="panel" id="p-dyeing">
+      <div class="sec-head">
+        <div class="sec-title">Dyeing Orders</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddDyeing()"><i class="ti ti-plus"></i> New Order</button></div>
+      </div>
+      <div class="kpi-grid g4">
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Processing</div><div class="kpi-val" id="dy-processing">—</div></div>
+        <div class="kpi" style="--ka:var(--red)"><div class="kpi-label">Overdue</div><div class="kpi-val" id="dy-overdue">—</div></div>
+        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Completed</div><div class="kpi-val" id="dy-completed">—</div></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Order No.</th><th>Date</th><th>Dyeing House</th><th>Material</th><th>Shade</th><th>Input Qty</th><th>Output Qty</th><th>Received</th><th>Wastage</th><th>Pending</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="dy-tbody"><tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ LAMINATION ORDERS ══════════ -->
+    <div class="panel" id="p-lamination">
+      <div class="sec-head">
+        <div class="sec-title">Lamination Orders</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddLamination()"><i class="ti ti-plus"></i> New Order</button></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Order No.</th><th>Date</th><th>Lam. House</th><th>Material</th><th>Type</th><th>Input Qty</th><th>Output Qty</th><th>Received</th><th>Wastage</th><th>Pending</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="lm-tbody"><tr><td colspan="12" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ JOB WORK ══════════ -->
+    <div class="panel" id="p-jobwork">
+      <div class="sec-head">
+        <div class="sec-title">Job Work Management</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddJobWork()"><i class="ti ti-plus"></i> New Issue</button></div>
+      </div>
+      <div class="kpi-grid g4">
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">Pending</div><div class="kpi-val" id="jw-pending">—</div></div>
+        <div class="kpi" style="--ka:var(--red)"><div class="kpi-label">Overdue</div><div class="kpi-val" id="jw-overdue">—</div></div>
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">Pending Charges</div><div class="kpi-val" id="jw-charges">—</div></div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>JW No.</th><th>Date</th><th>Job Worker</th><th>Material</th><th>Issued</th><th>Received</th><th>Wastage</th><th>Charges</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="jw-tbody"><tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ REPORTS ══════════ -->
+    <div class="panel" id="p-reports">
+      <div class="sec-head"><div class="sec-title">Reports &amp; Export</div></div>
+      <div class="report-grid">
+        <div class="report-tile" onclick="generateReport('Stock Summary')"><div class="rt-icon" style="color:var(--green)"><i class="ti ti-stack-2"></i></div><div class="rt-name">Stock Summary</div><div class="rt-desc">Export current stock from Firestore as CSV</div></div>
+        <div class="report-tile" onclick="generateReport('Purchase')"><div class="rt-icon" style="color:var(--amber)"><i class="ti ti-shopping-cart"></i></div><div class="rt-name">Purchase Report</div><div class="rt-desc">All POs with supplier, qty, status</div></div>
+        <div class="report-tile" onclick="generateReport('Transfer')"><div class="rt-icon" style="color:var(--blue)"><i class="ti ti-switch-2"></i></div><div class="rt-name">Transfer Report</div><div class="rt-desc">All challans with from/to/wastage</div></div>
+        <div class="report-tile" onclick="generateReport('Dyeing')"><div class="rt-icon" style="color:var(--purple)"><i class="ti ti-color-swatch"></i></div><div class="rt-name">Dyeing Report</div><div class="rt-desc">Input vs output vs wastage</div></div>
+        <div class="report-tile" onclick="generateReport('Lamination')"><div class="rt-icon" style="color:var(--amber)"><i class="ti ti-layers-intersect"></i></div><div class="rt-name">Lamination Report</div><div class="rt-desc">All lamination orders with wastage</div></div>
+        <div class="report-tile" onclick="generateReport('Job Work')"><div class="rt-icon" style="color:var(--red)"><i class="ti ti-briefcase"></i></div><div class="rt-name">Job Work Report</div><div class="rt-desc">Worker-wise with charges and status</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">Export Filters</div></div>
+        <div class="fgrid fgrid3">
+          <div class="fg"><label>From Date</label><input type="date" id="rpt-from"></div>
+          <div class="fg"><label>To Date</label><input type="date" id="rpt-to"></div>
+          <div class="fg"><label>Location</label><select id="rpt-location"><option value="all">All Locations</option><option>Main Factory</option><option>Dyeing Houses</option><option>Lamination Houses</option></select></div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Click any report tile above to export that data as CSV. Open in Excel or Google Sheets.</p>
+      </div>
+    </div>
+
+    <!-- ══════════ USERS ══════════ -->
+    <div class="panel" id="p-users">
+      <div class="sec-head">
+        <div class="sec-title">User Management</div>
+        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddUser()"><i class="ti ti-plus"></i> Add User</button></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">Registered Users</div></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="users-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">Role Permissions</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12.5px">
+          <div class="alert-item a-info"><i class="ti ti-shield-check"></i><span><b>Admin</b> — Full access to all modules</span></div>
+          <div class="alert-item a-success"><i class="ti ti-packages"></i><span><b>Store</b> — Stock, Transfer, GRN</span></div>
+          <div class="alert-item a-warn"><i class="ti ti-shopping-cart"></i><span><b>Purchase</b> — PO, GRN, Suppliers</span></div>
+          <div class="alert-item a-info" style="background:var(--purple-dim);color:var(--purple);border-left-color:var(--purple)"><i class="ti ti-color-swatch"></i><span><b>Dyeing</b> — Dyeing module only</span></div>
+          <div class="alert-item a-warn" style="background:rgba(255,122,92,.1);color:#ff9a80;border-left-color:var(--coral,#ff7a5c)"><i class="ti ti-layers-intersect"></i><span><b>Lamination</b> — Lamination module only</span></div>
+          <div class="alert-item" style="background:var(--bg-elevated);color:var(--text-secondary);border-left:2px solid var(--border-mid)"><i class="ti ti-chart-bar"></i><span><b>Accounts</b> — Reports &amp; KPIs only</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ═══════════════════ MODALS ═══════════════════ -->
+
+<!-- MATERIAL MODAL -->
+<div class="modal-overlay hidden" id="mat-modal">
+  <div class="modal">
+    <div class="modal-head"><h3 id="mat-modal-title">Add Material</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('mat-modal')">✕</button></div>
+    <form class="modal-body" id="mat-form" onsubmit="e => e.preventDefault()">
+      <input type="hidden" id="mat-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Material Code</label><input name="matCode" placeholder="MAT-001"></div>
+        <div class="fg"><label>Material Name *</label><input name="matName" placeholder="PP Non Woven 60 GSM" required></div>
+        <div class="fg"><label>Category</label><input name="matCategory" placeholder="PP NW"></div>
+        <div class="fg"><label>GSM</label><input name="matGsm" type="number" placeholder="60"></div>
+        <div class="fg"><label>Width</label><input name="matWidth" placeholder='60"'></div>
+        <div class="fg"><label>Unit</label><select name="matUnit"><option>Kg</option><option>Meter</option><option>Roll</option></select></div>
+        <div class="fg"><label>Current Stock</label><input name="matStock" type="number" placeholder="0" value="0"></div>
+        <div class="fg"><label>Reorder Level</label><input name="matReorder" type="number" placeholder="0" value="0"></div>
+        <div class="fg"><label>HSN Code</label><input name="matHsn" placeholder="5603"></div>
+        <div class="fg"><label>GST Rate</label><select name="matGst"><option>12%</option><option>18%</option><option>5%</option></select></div>
+        <div class="fg"><label>Standard Cost (₹/kg)</label><input name="matCost" type="number" placeholder="0"></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('mat-modal')">Cancel</button><button class="btn btn-primary" onclick="saveMaterial()">Save Material</button></div>
+  </div>
+</div>
+
+<!-- SUPPLIER MODAL -->
+<div class="modal-overlay hidden" id="sup-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add / Edit Supplier</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('sup-modal')">✕</button></div>
+    <form class="modal-body" id="sup-form">
+      <input type="hidden" id="sup-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Supplier Code</label><input name="supCode" placeholder="SUP-001"></div>
+        <div class="fg"><label>Supplier Name *</label><input name="supName" placeholder="Ratan Polymers" required></div>
+        <div class="fg"><label>GST Number</label><input name="supGst" placeholder="27AABCR1234F1Z5"></div>
+        <div class="fg"><label>Contact Person</label><input name="supContact" placeholder="Name"></div>
+        <div class="fg"><label>Phone</label><input name="supPhone" placeholder="98765-43210"></div>
+        <div class="fg"><label>Email</label><input name="supEmail" type="email" placeholder="supplier@email.com"></div>
+        <div class="fg"><label>Payment Terms</label><input name="supTerms" placeholder="30 days"></div>
+        <div class="fg full"><label>Address</label><textarea name="supAddress" placeholder="Full address"></textarea></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('sup-modal')">Cancel</button><button class="btn btn-primary" onclick="saveSupplier()">Save Supplier</button></div>
+  </div>
+</div>
+
+<!-- PROCESSOR MODAL -->
+<div class="modal-overlay hidden" id="proc-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add / Edit Processor</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('proc-modal')">✕</button></div>
+    <form class="modal-body" id="proc-form">
+      <input type="hidden" id="proc-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Code</label><input name="procCode" placeholder="PRO-001"></div>
+        <div class="fg"><label>Processor Name *</label><input name="procName" placeholder="Ranga Dye House" required></div>
+        <div class="fg"><label>Type</label><select name="procType"><option value="dyeing">Dyeing</option><option value="lamination">Lamination</option></select></div>
+        <div class="fg"><label>Contact Person</label><input name="procContact" placeholder="Name"></div>
+        <div class="fg"><label>Phone</label><input name="procPhone" placeholder="98765-43210"></div>
+        <div class="fg"><label>GST Number</label><input name="procGst" placeholder="GST number"></div>
+        <div class="fg"><label>Lead Time</label><input name="procLead" placeholder="10 days"></div>
+        <div class="fg full"><label>Address</label><textarea name="procAddress" placeholder="Full address"></textarea></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('proc-modal')">Cancel</button><button class="btn btn-primary" onclick="saveProcessor()">Save Processor</button></div>
+  </div>
+</div>
+
+<!-- JOB WORKER MASTER MODAL -->
+<div class="modal-overlay hidden" id="jw-master-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add / Edit Job Worker</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('jw-master-modal')">✕</button></div>
+    <form class="modal-body" id="jw-master-form">
+      <input type="hidden" id="jw-master-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Code</label><input name="jwCode" placeholder="JW-001"></div>
+        <div class="fg"><label>Worker Name *</label><input name="jwName" placeholder="ShivShakti Enterprises" required></div>
+        <div class="fg"><label>Work Type</label><input name="jwType" placeholder="Stitching / Weaving / Cutting"></div>
+        <div class="fg"><label>Contact Person</label><input name="jwContact" placeholder="Name"></div>
+        <div class="fg"><label>Phone</label><input name="jwPhone" placeholder="98765-43210"></div>
+        <div class="fg"><label>GST Number</label><input name="jwGst" placeholder="GST number"></div>
+        <div class="fg full"><label>Rate Card</label><input name="jwRate" placeholder="₹12/kg or ₹8/piece"></div>
+        <div class="fg full"><label>Address</label><textarea name="jwAddress" placeholder="Full address"></textarea></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('jw-master-modal')">Cancel</button><button class="btn btn-primary" onclick="saveJobWorker()">Save Worker</button></div>
+  </div>
+</div>
+
+<!-- CUSTOMER MODAL -->
+<div class="modal-overlay hidden" id="cust-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add / Edit Customer</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('cust-modal')">✕</button></div>
+    <form class="modal-body" id="cust-form">
+      <input type="hidden" id="cust-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Code</label><input name="custCode" placeholder="CUS-001"></div>
+        <div class="fg"><label>Customer Name *</label><input name="custName" placeholder="Bharat Agro Pack" required></div>
+        <div class="fg"><label>GST Number</label><input name="custGst" placeholder="GST number"></div>
+        <div class="fg"><label>Contact Person</label><input name="custContact" placeholder="Name"></div>
+        <div class="fg"><label>Phone</label><input name="custPhone" placeholder="98765-43210"></div>
+        <div class="fg"><label>Payment Terms</label><input name="custTerms" placeholder="30 days"></div>
+        <div class="fg full"><label>Address</label><textarea name="custAddress" placeholder="Full address"></textarea></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('cust-modal')">Cancel</button><button class="btn btn-primary" onclick="saveCustomer()">Save Customer</button></div>
+  </div>
+</div>
+
+<!-- PO MODAL -->
+<div class="modal-overlay hidden" id="po-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Create Purchase Order</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('po-modal')">✕</button></div>
+    <form class="modal-body" id="po-form">
+      <input type="hidden" id="po-form-id">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">PO Number: <span id="po-number-display" class="mono">Auto-generated</span></div>
+      <div class="fgrid">
+        <div class="fg"><label>Supplier *</label><input name="poSupplier" placeholder="Supplier name" required></div>
+        <div class="fg"><label>Material *</label><input name="poMaterial" placeholder="Material name" required></div>
+        <div class="fg"><label>Qty (Kg) *</label><input name="poQty" type="number" placeholder="0" required></div>
+        <div class="fg"><label>Rate (₹/Kg)</label><input name="poRate" type="number" placeholder="0"></div>
+        <div class="fg"><label>GST Rate</label><select name="poGst"><option value="12">12%</option><option value="18">18%</option><option value="5">5%</option></select></div>
+        <div class="fg full"><label>Remarks</label><input name="poRemarks" placeholder="Optional notes"></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('po-modal')">Cancel</button><button class="btn btn-primary" onclick="savePO()">Create PO</button></div>
+  </div>
+</div>
+
+<!-- GRN MODAL -->
+<div class="modal-overlay hidden" id="grn-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Goods Receipt Note (GRN)</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('grn-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="grn-form-id">
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+        <div>PO: <span class="mono" id="grn-po-ref"></span></div>
+        <div style="margin-top:4px">Material: <span class="fw5" id="grn-material"></span></div>
+        <div style="margin-top:4px;color:var(--amber)" id="grn-pending"></div>
+      </div>
+      <div class="fg"><label>Quantity Received (Kg) *</label><input type="number" id="grn-qty" placeholder="Enter received qty"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('grn-modal')">Cancel</button><button class="btn btn-primary" onclick="saveGrn()">Save GRN &amp; Update Stock</button></div>
+  </div>
+</div>
+
+<!-- TRANSFER MODAL -->
+<div class="modal-overlay hidden" id="tc-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>New Material Transfer</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('tc-modal')">✕</button></div>
+    <form class="modal-body" id="tc-form">
+      <input type="hidden" id="tc-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>From Location *</label><input name="tcFrom" placeholder="Main Factory / Warehouse A" required></div>
+        <div class="fg"><label>To Location *</label><input name="tcTo" placeholder="Ranga Dye House / Job Worker" required></div>
+        <div class="fg"><label>Material *</label><input name="tcMaterial" placeholder="Material name" required></div>
+        <div class="fg"><label>Qty to Send (Kg) *</label><input name="tcQty" type="number" placeholder="0" required></div>
+        <div class="fg"><label>Batch / Lot No.</label><input name="tcBatch" placeholder="LOT-XXXXXX"></div>
+        <div class="fg"><label>Expected Return Date</label><input name="tcReturn" type="date"></div>
+        <div class="fg full"><label>Remarks</label><input name="tcRemarks" placeholder="Optional notes"></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('tc-modal')">Cancel</button><button class="btn btn-primary" onclick="saveTransfer()">Issue Transfer Challan</button></div>
+  </div>
+</div>
+
+<!-- RECEIVE TRANSFER MODAL -->
+<div class="modal-overlay hidden" id="recv-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Confirm Transfer Receipt</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('recv-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="recv-form-id">
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+        TC: <span class="mono" id="recv-tc-ref"></span><br>
+        <span class="fw5" id="recv-material" style="margin-top:4px;display:block"></span>
+      </div>
+      <div class="fgrid">
+        <div class="fg"><label>Received Qty (Kg) *</label><input type="number" id="recv-qty" placeholder="0"></div>
+        <div class="fg"><label>Wastage (Kg)</label><input type="number" id="recv-wastage" placeholder="0" value="0"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('recv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveReceiveTransfer()">Confirm Receipt</button></div>
+  </div>
+</div>
+
+<!-- DYEING MODAL -->
+<div class="modal-overlay hidden" id="dy-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>New Dyeing Order</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('dy-modal')">✕</button></div>
+    <form class="modal-body" id="dy-form">
+      <input type="hidden" id="dy-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Dyeing House *</label><input name="dyHouse" placeholder="Ranga Dye House" required></div>
+        <div class="fg"><label>Material *</label><input name="dyMaterial" placeholder="PP NW 100 GSM" required></div>
+        <div class="fg"><label>Shade / Color</label><input name="dyShade" placeholder="Dark Blue / Red"></div>
+        <div class="fg"><label>Input Qty (Kg) *</label><input name="dyQty" type="number" placeholder="0" required></div>
+        <div class="fg"><label>Expected Return Date</label><input name="dyDate" type="date"></div>
+        <div class="fg full"><label>Remarks</label><input name="dyRemarks" placeholder="Optional notes"></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('dy-modal')">Cancel</button><button class="btn btn-primary" onclick="saveDyeingOrder()">Create Dyeing Order</button></div>
+  </div>
+</div>
+
+<!-- DYEING RECEIVE MODAL -->
+<div class="modal-overlay hidden" id="dy-recv-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Receive Dyeing Output</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('dy-recv-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="dy-recv-form-id">
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+        Order: <span class="mono" id="dy-recv-ref"></span><br>
+        <span class="fw5" id="dy-recv-material" style="margin-top:4px;display:block"></span>
+      </div>
+      <div class="fgrid">
+        <div class="fg"><label>Received Qty (Kg) *</label><input type="number" id="dy-recv-qty" placeholder="0"></div>
+        <div class="fg"><label>Wastage (Kg)</label><input type="number" id="dy-recv-wastage" placeholder="0" value="0"></div>
+        <div class="fg"><label>Rejection (Kg)</label><input type="number" id="dy-recv-rejection" placeholder="0" value="0"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('dy-recv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveDyeingReceipt()">Save Receipt</button></div>
+  </div>
+</div>
+
+<!-- LAMINATION MODAL -->
+<div class="modal-overlay hidden" id="lm-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>New Lamination Order</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('lm-modal')">✕</button></div>
+    <form class="modal-body" id="lm-form">
+      <input type="hidden" id="lm-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Lamination House *</label><input name="lmHouse" placeholder="Vinay Lamination" required></div>
+        <div class="fg"><label>Material *</label><input name="lmMaterial" placeholder="PP NW 100 GSM" required></div>
+        <div class="fg"><label>Lamination Type</label><input name="lmType" placeholder="BOPP / PE / PP"></div>
+        <div class="fg"><label>Input Qty (Kg) *</label><input name="lmQty" type="number" placeholder="0" required></div>
+        <div class="fg"><label>Expected Return Date</label><input name="lmDate" type="date"></div>
+        <div class="fg full"><label>Remarks</label><input name="lmRemarks" placeholder="Optional notes"></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('lm-modal')">Cancel</button><button class="btn btn-primary" onclick="saveLamination()">Create Order</button></div>
+  </div>
+</div>
+
+<!-- LAMINATION RECEIVE MODAL -->
+<div class="modal-overlay hidden" id="lm-recv-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Receive Lamination Output</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('lm-recv-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="lm-recv-form-id">
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+        Order: <span class="mono" id="lm-recv-ref"></span><br>
+        <span class="fw5" id="lm-recv-material" style="margin-top:4px;display:block"></span>
+      </div>
+      <div class="fgrid">
+        <div class="fg"><label>Received Qty (Kg) *</label><input type="number" id="lm-recv-qty" placeholder="0"></div>
+        <div class="fg"><label>Wastage (Kg)</label><input type="number" id="lm-recv-wastage" placeholder="0" value="0"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('lm-recv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveLaminationReceipt()">Save Receipt</button></div>
+  </div>
+</div>
+
+<!-- JOB WORK MODAL -->
+<div class="modal-overlay hidden" id="jw-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Issue Job Work</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('jw-modal')">✕</button></div>
+    <form class="modal-body" id="jw-form">
+      <input type="hidden" id="jw-form-id">
+      <div class="fgrid">
+        <div class="fg"><label>Job Worker *</label><input name="jwWorker" placeholder="ShivShakti Enterprises" required></div>
+        <div class="fg"><label>Material *</label><input name="jwMaterial" placeholder="PP NW 60 GSM" required></div>
+        <div class="fg"><label>Issued Qty (Kg) *</label><input name="jwQty" type="number" placeholder="0" required></div>
+        <div class="fg"><label>Rate (₹/Kg)</label><input name="jwRate" type="number" placeholder="0"></div>
+        <div class="fg"><label>Due Date</label><input name="jwDue" type="date"></div>
+        <div class="fg full"><label>Remarks</label><input name="jwRemarks" placeholder="Optional notes"></div>
+      </div>
+    </form>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('jw-modal')">Cancel</button><button class="btn btn-primary" onclick="saveJobWork()">Issue to Worker</button></div>
+  </div>
+</div>
+
+<!-- JOB WORK RECEIVE MODAL -->
+<div class="modal-overlay hidden" id="jw-recv-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Receive Job Work</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('jw-recv-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="jw-recv-form-id">
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+        JW No: <span class="mono" id="jw-recv-ref"></span><br>
+        <span id="jw-recv-worker" style="margin-top:4px;display:block;color:var(--text-secondary)"></span>
+      </div>
+      <div class="fgrid">
+        <div class="fg"><label>Received Qty (Kg) *</label><input type="number" id="jw-recv-qty" placeholder="0"></div>
+        <div class="fg"><label>Wastage (Kg)</label><input type="number" id="jw-recv-wastage" placeholder="0" value="0"></div>
+        <div class="fg"><label>Rejection (Kg)</label><input type="number" id="jw-recv-rejection" placeholder="0" value="0"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('jw-recv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveJobWorkReceipt()">Save Receipt</button></div>
+  </div>
+</div>
+
+<!-- ADD USER MODAL -->
+<div class="modal-overlay hidden" id="user-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Add New User</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('user-modal')">✕</button></div>
+    <div class="modal-body">
+      <div class="alert-item a-info" style="margin-bottom:14px"><i class="ti ti-info-circle"></i><span>To create users, go to Firebase Console → Authentication → Add User. Then add their UID to the Firestore <code>users</code> collection with fields: <code>name</code>, <code>email</code>, <code>role</code>.</span></div>
+      <p style="font-size:12.5px;color:var(--text-muted)">Roles: <strong>admin</strong>, <strong>store</strong>, <strong>purchase</strong>, <strong>production</strong>, <strong>dyeing</strong>, <strong>lamination</strong>, <strong>accounts</strong>, <strong>jobcoord</strong></p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal('user-modal')">Got it</button></div>
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+  const cfgScript = document.createElement('script');
+  cfgScript.src = 'firebase-config.js';
+  document.head.appendChild(cfgScript);
+  cfgScript.onload = () => {
+    const appScript = document.createElement('script');
+    appScript.type = 'module';
+    appScript.src = 'app.js';
+    document.head.appendChild(appScript);
+  };
+  cfgScript.onerror = () => {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#ff5e6c;background:#0d0f14;flex-direction:column;gap:12px"><div style="font-size:20px">⚠️ firebase-config.js not found</div><div style="color:#8a90a0;font-size:14px">Add your Firebase project config to firebase-config.js and reload.</div></div>';
+  };
+</script>
+</body>
+</html>
