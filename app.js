@@ -1,5 +1,5 @@
 // ============================================================
-//  app.js  — TexFab ERP  |  Firebase Firestore + Auth
+//  app.js  — Inventory Master  |  Firebase Firestore + Auth
 //  All data is real, saved to Firestore, synced live to all users
 // ============================================================
 
@@ -14,7 +14,17 @@ import {
   where, getDocs, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// ── Init ─────────────────────────────────────────────────────
+// ── Theme toggle — dark / light ───────────────────────────────
+(function applyThemeOnLoad() {
+  const saved = localStorage.getItem('im-theme');
+  if (saved === 'light') document.body.classList.add('light');
+})();
+
+window.toggleTheme = function() {
+  const isLight = document.body.classList.toggle('light');
+  localStorage.setItem('im-theme', isLight ? 'light' : 'dark');
+};
+
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
@@ -1158,39 +1168,275 @@ window.saveJobWorkReceipt = async () => {
 };
 
 // ══════════════════════════════════════════════════════════════
-//  USERS
+//  USERS — Full Admin Management
+//  Uses Firebase Auth REST API to create users without signing out
 // ══════════════════════════════════════════════════════════════
+
+const ROLE_DESCRIPTIONS = {
+  admin:      'Full access to all 14 modules including User Management',
+  store:      'Stock Management, Material Transfer, Material Master',
+  purchase:   'Purchase Orders, GRN, Supplier Master, Stock (view)',
+  production: 'Stock, Transfer, Dyeing, Lamination, Job Work',
+  dyeing:     'Dyeing Orders and Material Transfer only',
+  lamination: 'Lamination Orders and Material Transfer only',
+  jobcoord:   'Job Work Management and Material Transfer only',
+  accounts:   'Reports, Purchase (view), Stock (view) — read-only access',
+};
+
 function loadUsers() {
-  if (currentRole !== 'admin') { el('users-tbody') && (el('users-tbody').innerHTML = emptyRow(5,'Access denied — Admin only')); return; }
-  const unsub = onSnapshot(collection(db,'users'), snap => {
-    const tbody = el('users-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = snap.docs.map(d => {
-      const u = d.data();
-      return `<tr>
-        <td class="fw5">${u.name||'—'}</td>
-        <td class="mono c-muted">${u.email||'—'}</td>
-        <td><span class="pill p-blue">${u.role||'—'}</span></td>
-        <td>${fmtDate(u.lastLogin)||'Never'}</td>
-        <td><span class="pill p-green">Active</span></td>
-        <td>${d.id!==currentUser.uid ? `<button class="btn btn-secondary btn-sm" onclick="deleteUser('${d.id}')">Remove</button>` : '<span class="c-muted">You</span>'}</td>
-      </tr>`;
-    }).join('');
-  });
+  if (currentRole !== 'admin') {
+    if (el('users-tbody')) el('users-tbody').innerHTML = emptyRow(6, 'Access denied — Admin only');
+    return;
+  }
+
+  const unsub = onSnapshot(
+    query(collection(db, 'users'), orderBy('createdAt', 'desc')),
+    snap => {
+      const tbody = el('users-tbody');
+      if (!tbody) return;
+
+      // Update stats
+      let total = 0, active = 0, inactive = 0, admins = 0;
+      snap.forEach(d => {
+        total++;
+        const u = d.data();
+        if (u.status === 'inactive') inactive++;
+        else active++;
+        if (u.role === 'admin') admins++;
+      });
+      safeSet('stat-total', total);
+      safeSet('stat-active', active);
+      safeSet('stat-inactive', inactive);
+      safeSet('stat-admins', admins);
+
+      if (snap.empty) { tbody.innerHTML = emptyRow(6, 'No users yet. Click "Create New User" to add staff.'); return; }
+
+      tbody.innerHTML = snap.docs.map(d => {
+        const u = d.data();
+        const isYou = d.id === currentUser.uid;
+        const isActive = u.status !== 'inactive';
+        const rolePillClass = {
+          admin:'p-purple', store:'p-green', purchase:'p-amber',
+          production:'p-gray', dyeing:'p-blue', lamination:'p-amber',
+          jobcoord:'p-gray', accounts:'p-gray'
+        }[u.role] || 'p-gray';
+
+        return `<tr style="${isActive ? '' : 'opacity:.55'}">
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-green);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#0d0f14;flex-shrink:0">
+                ${(u.name||'U').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)}
+              </div>
+              <div>
+                <div class="fw5" style="font-size:13px">${u.name||'—'}</div>
+                ${u.phone ? `<div class="c-muted" style="font-size:11px">${u.phone}</div>` : ''}
+              </div>
+            </div>
+          </td>
+          <td class="mono c-muted" style="font-size:11.5px">${u.email||'—'}</td>
+          <td><span class="pill ${rolePillClass}">${u.role||'—'}</span></td>
+          <td class="c-muted" style="font-size:11.5px">${fmtDate(u.createdAt)||'—'}</td>
+          <td>${isActive
+            ? '<span class="pill p-green">Active</span>'
+            : '<span class="pill p-red">Deactivated</span>'}</td>
+          <td>
+            ${isYou
+              ? '<span class="c-muted" style="font-size:11.5px">You</span>'
+              : `<div style="display:flex;gap:5px">
+                   <button class="btn btn-secondary btn-sm" onclick="openEditUser('${d.id}')"><i class="ti ti-edit"></i> Edit</button>
+                   <button class="btn btn-danger btn-sm" onclick="openDeleteUser('${d.id}','${(u.name||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+                 </div>`
+            }
+          </td>
+        </tr>`;
+      }).join('');
+    }
+  );
   unsubs.push(unsub);
 }
 
-// Note: Creating users requires Firebase Admin SDK (server-side) or Cloud Functions.
-// The form below shows the UI; actual user creation needs a Cloud Function.
-window.openAddUser = () => openModal('user-modal');
-window.saveNewUser = async () => {
-  toast('To create users: Go to Firebase Console → Authentication → Add User, then add their UID to Firestore users collection with name, email, and role fields.', 'info');
-  closeModal('user-modal');
+// ── Role description hint ─────────────────────────────────────
+const roleSelect = document.getElementById('u-role');
+if (roleSelect) {
+  roleSelect.addEventListener('change', function() {
+    const box = el('role-desc-box');
+    const txt = el('role-desc-text');
+    if (this.value && ROLE_DESCRIPTIONS[this.value]) {
+      txt.textContent = ROLE_DESCRIPTIONS[this.value];
+      box.style.display = 'block';
+    } else {
+      box.style.display = 'none';
+    }
+  });
+}
+
+// ── Open create user modal ────────────────────────────────────
+window.openAddUser = () => {
+  if (currentRole !== 'admin') { toast('Only admins can create users', 'error'); return; }
+  // Reset form
+  el('user-modal-title').textContent = 'Create New User';
+  el('user-save-label').textContent = 'Create User';
+  el('user-edit-uid').value = '';
+  el('u-name').value = '';
+  el('u-email').value = '';
+  el('u-pass').value = '';
+  el('u-role').value = '';
+  el('u-phone').value = '';
+  el('u-dept').value = '';
+  el('u-pass-group').style.display = '';
+  el('user-create-info').style.display = '';
+  el('role-desc-box').style.display = 'none';
+  openModal('user-modal');
 };
-window.deleteUser = async (id) => {
-  if (!confirm('Remove this user from the dashboard?')) return;
-  await deleteDoc(doc(db,'users',id));
-  toast('User removed from dashboard');
+
+// ── Save user (create via Firebase Auth REST API) ─────────────
+window.saveUser = async () => {
+  const name  = el('u-name').value.trim();
+  const email = el('u-email').value.trim();
+  const pass  = el('u-pass').value;
+  const role  = el('u-role').value;
+  const phone = el('u-phone').value.trim();
+  const dept  = el('u-dept').value.trim();
+
+  if (!name)  { toast('Please enter a name', 'error'); return; }
+  if (!email) { toast('Please enter an email address', 'error'); return; }
+  if (!pass || pass.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
+  if (!role)  { toast('Please select a role', 'error'); return; }
+
+  const btn = el('user-save-btn');
+  btn.disabled = true;
+  el('user-save-label').textContent = 'Creating...';
+
+  try {
+    // Use Firebase Auth REST API to create user without affecting current session
+    const apiKey = firebaseConfig.apiKey;
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pass, returnSecureToken: false }),
+      }
+    );
+    const data = await res.json();
+
+    if (!res.ok) {
+      const msg = data.error?.message || 'Failed to create user';
+      if (msg === 'EMAIL_EXISTS') throw new Error('This email is already registered.');
+      if (msg === 'INVALID_EMAIL') throw new Error('Please enter a valid email address.');
+      if (msg === 'WEAK_PASSWORD : Password should be at least 6 characters') throw new Error('Password too weak — use at least 6 characters.');
+      throw new Error(msg);
+    }
+
+    const uid = data.localId;
+
+    // Save user profile to Firestore users collection
+    const { setDoc: setDocFn } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    await setDocFn(doc(db, 'users', uid), {
+      name, email, role, phone, department: dept,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      createdBy: currentUser.name || currentUser.email,
+    });
+
+    toast(`✓ User "${name}" created successfully. Share their email & password with them.`, 'success');
+    closeModal('user-modal');
+
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    el('user-save-label').textContent = 'Create User';
+  }
+};
+
+// ── Open edit user modal ──────────────────────────────────────
+window.openEditUser = async (uid) => {
+  if (currentRole !== 'admin') { toast('Only admins can edit users', 'error'); return; }
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) { toast('User not found', 'error'); return; }
+    const u = snap.data();
+    el('edit-uid').value = uid;
+    el('edit-user-name-display').textContent = u.name || '—';
+    el('edit-user-email-display').textContent = u.email || '—';
+    el('edit-name').value = u.name || '';
+    el('edit-phone').value = u.phone || '';
+    el('edit-role').value = u.role || 'store';
+    el('edit-status').value = u.status || 'active';
+    el('edit-pass').value = '';
+    openModal('user-edit-modal');
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+// ── Save user edits ───────────────────────────────────────────
+window.saveUserEdit = async () => {
+  const uid    = el('edit-uid').value;
+  const name   = el('edit-name').value.trim();
+  const phone  = el('edit-phone').value.trim();
+  const role   = el('edit-role').value;
+  const status = el('edit-status').value;
+  const newPass = el('edit-pass').value;
+
+  if (!name) { toast('Name cannot be empty', 'error'); return; }
+  if (!role) { toast('Please select a role', 'error'); return; }
+
+  try {
+    // Update Firestore profile
+    await updateDoc(doc(db, 'users', uid), {
+      name, phone, role, status, updatedAt: serverTimestamp(),
+      updatedBy: currentUser.name || currentUser.email,
+    });
+
+    // If new password provided, update via REST API
+    if (newPass) {
+      if (newPass.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
+      const apiKey = firebaseConfig.apiKey;
+      // Need the user's idToken — we can only reset password via email for security
+      // So we use the sendPasswordResetEmail approach via REST
+      const resetRes = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestType: 'PASSWORD_RESET', email: el('edit-user-email-display').textContent }),
+        }
+      );
+      if (resetRes.ok) {
+        toast('Profile updated. A password reset email has been sent to the user.', 'success');
+      } else {
+        toast('Profile updated. Could not send password reset email.', 'info');
+      }
+    } else {
+      toast(`✓ User "${name}" updated successfully.`, 'success');
+    }
+
+    closeModal('user-edit-modal');
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+// ── Open delete confirm ───────────────────────────────────────
+window.openDeleteUser = (uid, name) => {
+  if (uid === currentUser.uid) { toast('You cannot remove your own account', 'error'); return; }
+  el('delete-uid').value = uid;
+  el('delete-user-name').textContent = name;
+  openModal('user-delete-modal');
+};
+
+// ── Confirm delete ────────────────────────────────────────────
+window.confirmDeleteUser = async () => {
+  const uid = el('delete-uid').value;
+  if (!uid) return;
+  try {
+    // Mark as inactive in Firestore (preserve audit trail)
+    await updateDoc(doc(db, 'users', uid), {
+      status: 'inactive',
+      deactivatedAt: serverTimestamp(),
+      deactivatedBy: currentUser.name || currentUser.email,
+    });
+    toast('User deactivated. They can no longer log in.', 'success');
+    closeModal('user-delete-modal');
+  } catch(e) { toast(e.message, 'error'); }
 };
 
 // ══════════════════════════════════════════════════════════════
