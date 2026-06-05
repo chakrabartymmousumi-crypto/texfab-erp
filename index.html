@@ -3,41 +3,79 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TexFab ERP — Login</title>
+<title>Inventory Master — Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:#0d0f14;color:#e8eaf0;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.login-wrap{width:100%;max-width:400px;padding:24px}
+body{font-family:'DM Sans',sans-serif;background:#0d0f14;color:#e8eaf0;min-height:100vh;display:flex;align-items:center;justify-content:center;transition:background .25s,color .25s}
+body.light{background:#f0f2f7;color:#1a1d26}
+.login-wrap{width:100%;max-width:400px;padding:24px;position:relative}
 .logo-row{display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center}
 .logo-icon{width:44px;height:44px;border-radius:10px;background:#2dd4a0;display:flex;align-items:center;justify-content:center;font-size:22px}
 .logo-text .name{font-size:22px;font-weight:600;letter-spacing:-.03em}
 .logo-text .sub{font-size:12px;color:#545a6b;margin-top:1px}
-.card{background:#13161e;border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:32px}
+body.light .logo-text .sub{color:#9096aa}
+.card{background:#13161e;border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:32px;transition:background .25s,border-color .25s}
+body.light .card{background:#ffffff;border:1px solid rgba(0,0,0,.1);box-shadow:0 4px 20px rgba(0,0,0,.08)}
 .card h2{font-size:18px;font-weight:600;margin-bottom:6px}
 .card p{font-size:13px;color:#8a90a0;margin-bottom:24px}
+body.light .card p{color:#5a6078}
 .field{margin-bottom:16px}
 .field label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:#8a90a0;margin-bottom:6px}
-.field input{width:100%;background:#191d27;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 14px;font-size:14px;font-family:'DM Sans',sans-serif;color:#e8eaf0;transition:border-color .15s}
+body.light .field label{color:#5a6078}
+.field input{width:100%;background:#191d27;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 14px;font-size:14px;font-family:'DM Sans',sans-serif;color:#e8eaf0;transition:border-color .15s,background .25s}
+body.light .field input{background:#f5f6fa;border:1px solid rgba(0,0,0,.12);color:#1a1d26}
 .field input:focus{outline:none;border-color:#2dd4a0}
 .field input::placeholder{color:#545a6b}
+body.light .field input::placeholder{color:#9096aa}
 .btn-login{width:100%;background:#2dd4a0;color:#0d0f14;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:opacity .15s;margin-top:8px}
 .btn-login:hover{opacity:.9}
 .btn-login:disabled{opacity:.5;cursor:not-allowed}
 .error{background:rgba(255,94,108,.12);color:#ff8c97;border:1px solid rgba(255,94,108,.25);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none}
 .error.show{display:block}
+body.light .error{background:rgba(214,50,72,.08);color:#d63248;border-color:rgba(214,50,72,.2)}
 .loading{display:none;text-align:center;color:#8a90a0;font-size:13px;margin-top:12px}
 .loading.show{display:block}
+/* Theme toggle on login page */
+.login-theme-btn{
+  position:fixed;top:16px;right:16px;
+  width:36px;height:36px;border-radius:50%;
+  background:#191d27;border:1px solid rgba(255,255,255,.12);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:16px;color:#8a90a0;transition:background .2s,transform .15s;
+}
+body.light .login-theme-btn{background:#ffffff;border:1px solid rgba(0,0,0,.12);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.login-theme-btn:hover{transform:scale(1.1)}
+.login-theme-btn .icon-dark{display:block}
+.login-theme-btn .icon-light{display:none}
+body.light .login-theme-btn .icon-dark{display:none}
+body.light .login-theme-btn .icon-light{display:block}
 </style>
 </head>
 <body>
+<!-- Theme toggle button fixed top-right on login page -->
+<button class="login-theme-btn" onclick="toggleLoginTheme()" title="Switch dark / light mode">
+  <i class="ti ti-moon icon-dark" style="font-size:16px;font-family:'tabler-icons'"></i>
+  <i class="ti ti-sun icon-light" style="font-size:16px;font-family:'tabler-icons'"></i>
+</button>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.19.0/fonts/tabler-icons.min.css">
+<script>
+  // Apply saved theme immediately before render
+  (function(){
+    if(localStorage.getItem('im-theme')==='light') document.body.classList.add('light');
+  })();
+  function toggleLoginTheme(){
+    const isLight = document.body.classList.toggle('light');
+    localStorage.setItem('im-theme', isLight ? 'light' : 'dark');
+  }
+</script>
 <div class="login-wrap">
   <div class="logo-row">
     <div class="logo-icon">🏭</div>
     <div class="logo-text">
-      <div class="name">TexFab ERP</div>
-      <div class="sub">Manufacturing Management Suite</div>
+      <div class="name">Inventory Master</div>
+      <div class="sub">EB Inventory Management System</div>
     </div>
   </div>
   <div class="card">
