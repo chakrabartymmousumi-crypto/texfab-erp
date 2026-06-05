@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TexFab ERP — Dashboard</title>
+<title>Inventory Master — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.19.0/fonts/tabler-icons.min.css">
@@ -21,7 +21,7 @@
 <nav class="sidebar">
   <div class="brand">
     <div class="brand-icon">🏭</div>
-    <div><div class="brand-name">TexFab ERP</div><div class="brand-sub">Manufacturing Suite</div></div>
+    <div><div class="brand-name">Inventory Master</div><div class="brand-sub">EB Inventory</div></div>
   </div>
   <div class="nav-section">
     <div class="nav-label">Overview</div>
@@ -61,6 +61,11 @@
     <div class="page-title" id="ptitle">Dashboard</div>
     <div class="tb-actions">
       <button class="tb-btn"><i class="ti ti-bell"></i></button>
+      <!-- Theme toggle -->
+      <button class="theme-toggle" onclick="toggleTheme()" title="Switch between dark and light mode">
+        <i class="ti ti-moon icon-dark"></i>
+        <i class="ti ti-sun icon-light"></i>
+      </button>
       <div class="user-chip">
         <div class="user-name" id="user-name">Loading...</div>
         <span class="role-tag" id="user-role"></span>
@@ -329,26 +334,56 @@
     <div class="panel" id="p-users">
       <div class="sec-head">
         <div class="sec-title">User Management</div>
-        <div class="sec-actions"><button class="btn btn-primary" onclick="openAddUser()"><i class="ti ti-plus"></i> Add User</button></div>
+        <div class="sec-actions">
+          <button class="btn btn-primary" onclick="openAddUser()"><i class="ti ti-user-plus"></i> Create New User</button>
+        </div>
       </div>
+
+      <!-- Stats row -->
+      <div class="kpi-grid g4" id="user-stats-grid">
+        <div class="kpi" style="--ka:var(--accent-blue)"><div class="kpi-label">Total Users</div><div class="kpi-val" id="stat-total">—</div><div class="kpi-sub">All registered</div></div>
+        <div class="kpi" style="--ka:var(--accent-green)"><div class="kpi-label">Active Users</div><div class="kpi-val" id="stat-active">—</div><div class="kpi-sub">Can log in</div></div>
+        <div class="kpi" style="--ka:var(--accent-red)"><div class="kpi-label">Deactivated</div><div class="kpi-val" id="stat-inactive">—</div><div class="kpi-sub">Login blocked</div></div>
+        <div class="kpi" style="--ka:var(--accent-purple)"><div class="kpi-label">Admins</div><div class="kpi-val" id="stat-admins">—</div><div class="kpi-sub">Full access</div></div>
+      </div>
+
+      <!-- Users table -->
       <div class="card">
-        <div class="card-head"><div class="card-title">Registered Users</div></div>
+        <div class="card-head">
+          <div class="card-title">All Users</div>
+          <span style="font-size:11px;color:var(--text-muted)">Real-time</span>
+        </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody id="users-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px">Loading users...</td></tr>
+            </tbody>
           </table>
         </div>
       </div>
+
+      <!-- Role permissions reference -->
       <div class="card">
-        <div class="card-head"><div class="card-title">Role Permissions</div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12.5px">
-          <div class="alert-item a-info"><i class="ti ti-shield-check"></i><span><b>Admin</b> — Full access to all modules</span></div>
-          <div class="alert-item a-success"><i class="ti ti-packages"></i><span><b>Store</b> — Stock, Transfer, GRN</span></div>
-          <div class="alert-item a-warn"><i class="ti ti-shopping-cart"></i><span><b>Purchase</b> — PO, GRN, Suppliers</span></div>
-          <div class="alert-item a-info" style="background:var(--purple-dim);color:var(--purple);border-left-color:var(--purple)"><i class="ti ti-color-swatch"></i><span><b>Dyeing</b> — Dyeing module only</span></div>
-          <div class="alert-item a-warn" style="background:rgba(255,122,92,.1);color:#ff9a80;border-left-color:var(--coral,#ff7a5c)"><i class="ti ti-layers-intersect"></i><span><b>Lamination</b> — Lamination module only</span></div>
-          <div class="alert-item" style="background:var(--bg-elevated);color:var(--text-secondary);border-left:2px solid var(--border-mid)"><i class="ti ti-chart-bar"></i><span><b>Accounts</b> — Reports &amp; KPIs only</span></div>
+        <div class="card-head"><div class="card-title">Role Permissions Reference</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="alert-item a-info"><i class="ti ti-shield-check"></i><span><b>admin</b> — Full access to all 14 modules</span></div>
+          <div class="alert-item a-success"><i class="ti ti-packages"></i><span><b>store</b> — Stock, Transfer, Material Master</span></div>
+          <div class="alert-item a-warn"><i class="ti ti-shopping-cart"></i><span><b>purchase</b> — Purchase, Suppliers, Stock</span></div>
+          <div class="alert-item" style="background:var(--bg-elevated);color:var(--text-secondary);border-left:2px solid var(--border-mid)"><i class="ti ti-settings-2"></i><span><b>production</b> — Stock, Transfer, Dyeing, Lam, JW</span></div>
+          <div class="alert-item a-info" style="background:var(--purple-dim);color:var(--purple);border-left-color:var(--purple)"><i class="ti ti-color-swatch"></i><span><b>dyeing</b> — Dyeing Orders + Transfer</span></div>
+          <div class="alert-item a-warn" style="background:rgba(255,122,92,.1);color:#ff9a80;border-left-color:#ff7a5c"><i class="ti ti-layers-intersect"></i><span><b>lamination</b> — Lamination Orders + Transfer</span></div>
+          <div class="alert-item" style="background:var(--bg-elevated);color:var(--text-secondary);border-left:2px solid var(--border-mid)"><i class="ti ti-briefcase"></i><span><b>jobcoord</b> — Job Work + Transfer</span></div>
+          <div class="alert-item" style="background:var(--bg-elevated);color:var(--text-secondary);border-left:2px solid var(--border-mid)"><i class="ti ti-chart-bar"></i><span><b>accounts</b> — Reports + Purchase + Stock (view)</span></div>
         </div>
       </div>
     </div>
@@ -658,15 +693,120 @@
   </div>
 </div>
 
-<!-- ADD USER MODAL -->
+<!-- CREATE USER MODAL -->
 <div class="modal-overlay hidden" id="user-modal">
-  <div class="modal">
-    <div class="modal-head"><h3>Add New User</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('user-modal')">✕</button></div>
-    <div class="modal-body">
-      <div class="alert-item a-info" style="margin-bottom:14px"><i class="ti ti-info-circle"></i><span>To create users, go to Firebase Console → Authentication → Add User. Then add their UID to the Firestore <code>users</code> collection with fields: <code>name</code>, <code>email</code>, <code>role</code>.</span></div>
-      <p style="font-size:12.5px;color:var(--text-muted)">Roles: <strong>admin</strong>, <strong>store</strong>, <strong>purchase</strong>, <strong>production</strong>, <strong>dyeing</strong>, <strong>lamination</strong>, <strong>accounts</strong>, <strong>jobcoord</strong></p>
+  <div class="modal" style="max-width:480px">
+    <div class="modal-head">
+      <h3 id="user-modal-title">Create New User</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('user-modal')">✕</button>
     </div>
-    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal('user-modal')">Got it</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="user-edit-uid">
+
+      <!-- Info banner shown only for create mode -->
+      <div id="user-create-info" class="alert-item a-info" style="margin-bottom:14px;font-size:12px">
+        <i class="ti ti-info-circle"></i>
+        <span>The new user will receive login credentials. Share their email and password with them so they can log in.</span>
+      </div>
+
+      <div class="fgrid">
+        <div class="fg"><label>Full Name *</label><input type="text" id="u-name" placeholder="e.g. Priya Sharma"></div>
+        <div class="fg"><label>Email Address *</label><input type="email" id="u-email" placeholder="priya@yourcompany.com"></div>
+        <div class="fg" id="u-pass-group"><label>Password * <span style="font-size:10px;color:var(--text-muted)">(min 6 chars)</span></label><input type="password" id="u-pass" placeholder="Min 6 characters"></div>
+        <div class="fg">
+          <label>Role *</label>
+          <select id="u-role">
+            <option value="">Select role...</option>
+            <option value="admin">admin — Full access</option>
+            <option value="store">store — Stock & Transfer</option>
+            <option value="purchase">purchase — Purchase & Suppliers</option>
+            <option value="production">production — Production modules</option>
+            <option value="dyeing">dyeing — Dyeing only</option>
+            <option value="lamination">lamination — Lamination only</option>
+            <option value="jobcoord">jobcoord — Job Work only</option>
+            <option value="accounts">accounts — Reports & view only</option>
+          </select>
+        </div>
+        <div class="fg"><label>Phone (optional)</label><input type="tel" id="u-phone" placeholder="98765-43210"></div>
+        <div class="fg"><label>Department (optional)</label><input type="text" id="u-dept" placeholder="e.g. Store, Purchase"></div>
+      </div>
+
+      <!-- Role description box -->
+      <div id="role-desc-box" style="display:none;background:var(--bg-elevated);border:0.5px solid var(--border-mid);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text-secondary);margin-top:4px">
+        <i class="ti ti-info-circle" style="margin-right:5px"></i><span id="role-desc-text"></span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('user-modal')">Cancel</button>
+      <button class="btn btn-primary" id="user-save-btn" onclick="saveUser()">
+        <i class="ti ti-user-plus"></i> <span id="user-save-label">Create User</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT USER MODAL (role + status change) -->
+<div class="modal-overlay hidden" id="user-edit-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <h3>Edit User</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('user-edit-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-uid">
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:500" id="edit-user-name-display"></div>
+        <div style="font-size:12px;color:var(--text-muted)" id="edit-user-email-display"></div>
+      </div>
+      <div class="fgrid">
+        <div class="fg"><label>Full Name</label><input type="text" id="edit-name" placeholder="Full name"></div>
+        <div class="fg"><label>Phone</label><input type="tel" id="edit-phone" placeholder="Phone number"></div>
+        <div class="fg">
+          <label>Role</label>
+          <select id="edit-role">
+            <option value="admin">admin — Full access</option>
+            <option value="store">store — Stock & Transfer</option>
+            <option value="purchase">purchase — Purchase & Suppliers</option>
+            <option value="production">production — Production modules</option>
+            <option value="dyeing">dyeing — Dyeing only</option>
+            <option value="lamination">lamination — Lamination only</option>
+            <option value="jobcoord">jobcoord — Job Work only</option>
+            <option value="accounts">accounts — Reports & view only</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Status</label>
+          <select id="edit-status">
+            <option value="active">Active — can log in</option>
+            <option value="inactive">Deactivated — login blocked</option>
+          </select>
+        </div>
+        <div class="fg full"><label>New Password (leave blank to keep current)</label><input type="password" id="edit-pass" placeholder="Leave blank to keep existing password"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('user-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUserEdit()"><i class="ti ti-device-floppy"></i> Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM DELETE USER MODAL -->
+<div class="modal-overlay hidden" id="user-delete-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-head"><h3>Remove User</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('user-delete-modal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="delete-uid">
+      <div style="text-align:center;padding:10px 0">
+        <i class="ti ti-user-x" style="font-size:40px;color:var(--accent-red);display:block;margin-bottom:10px"></i>
+        <div style="font-size:14px;font-weight:500;margin-bottom:6px">Remove <span id="delete-user-name"></span>?</div>
+        <div style="font-size:12.5px;color:var(--text-muted);line-height:1.6">This will remove the user from the dashboard. They will no longer be able to log in. Their past transaction records will be preserved.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('user-delete-modal')">Cancel</button>
+      <button class="btn" style="background:var(--accent-red);color:#fff;border:none;border-radius:var(--r-sm);padding:8px 14px;cursor:pointer;font-size:12.5px;font-family:'DM Sans',sans-serif;font-weight:500;display:inline-flex;align-items:center;gap:5px" onclick="confirmDeleteUser()"><i class="ti ti-trash"></i> Remove User</button>
+    </div>
   </div>
 </div>
 
