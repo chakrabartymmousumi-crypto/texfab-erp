@@ -163,64 +163,87 @@ document.addEventListener('click', e => {
 });
 
 // ══════════════════════════════════════════════════════════════
-//  DASHBOARD  — real-time KPI aggregation
+//  DASHBOARD  — real-time KPI aggregation from ALL collections
 // ══════════════════════════════════════════════════════════════
 function setupRealtimeDashboard() {
-  // Listen to stock collection in real-time
-  const unsubStock = onSnapshot(collection(db, 'stock'), snap => {
-    let factory=0, dyeing=0, lam=0, jw=0, transit=0;
-    snap.forEach(d => {
-      const s = d.data();
-      const loc = (s.location || '').toLowerCase();
-      const qty = Number(s.balance || 0);
-      if (loc.includes('factory') || loc.includes('warehouse')) factory += qty;
-      else if (loc.includes('dye')) dyeing += qty;
-      else if (loc.includes('lam')) lam += qty;
-      else if (loc.includes('job') || loc.includes('worker')) jw += qty;
-      else if (loc.includes('transit')) transit += qty;
-    });
-    safeSet('kpi-factory', fmtNum(factory));
-    safeSet('kpi-dyeing', fmtNum(dyeing));
-    safeSet('kpi-lam', fmtNum(lam));
-    safeSet('kpi-jw', fmtNum(jw));
-    renderLocationBars({ factory, dyeing, lam, jw, transit });
-  });
-  unsubs.push(unsubStock);
 
-  // Pending POs
+  // ── 1. Materials — low stock + total count ─────────────────
+  const unsubMat = onSnapshot(collection(db, 'materials'), snap => {
+    let low = 0, totalMat = 0;
+    let totalStockKg = 0;
+    snap.forEach(d => {
+      const m = d.data();
+      totalMat++;
+      totalStockKg += Number(m.currentStock || 0);
+      if (Number(m.currentStock||0) < Number(m.reorderLevel||0) && Number(m.reorderLevel||0) > 0) low++;
+    });
+    safeSet('kpi-lowstock', low);
+    safeSet('kpi-total-mat', totalMat);
+    safeSet('kpi-factory', fmtNum(totalStockKg) + ' kg');
+    renderLowStockAlerts(snap);
+  });
+  unsubs.push(unsubMat);
+
+  // ── 2. Purchase Orders — open count ───────────────────────
   const unsubPO = onSnapshot(
     query(collection(db,'purchase_orders'), where('status','in',['draft','sent','partial'])),
     snap => safeSet('kpi-pending-po', snap.size)
   );
   unsubs.push(unsubPO);
 
-  // Low stock alerts
-  const unsubMat = onSnapshot(collection(db, 'materials'), snap => {
-    let low = 0;
+  // ── 3. Dyeing Orders — pending count + kg at dyeing ───────
+  const unsubDy = onSnapshot(collection(db,'dyeing_orders'), snap => {
+    let pending = 0, overdue = 0, dyeingKg = 0;
+    const now = new Date();
     snap.forEach(d => {
-      const m = d.data();
-      if (Number(m.currentStock||0) < Number(m.reorderLevel||0)) low++;
+      const o = d.data();
+      if (o.status === 'processing') {
+        pending++;
+        dyeingKg += Number(o.inputQty || 0) - Number(o.receivedQty || 0);
+        if (o.expectedDate && new Date(o.expectedDate) < now) overdue++;
+      }
     });
-    safeSet('kpi-lowstock', low);
-    renderLowStockAlerts(snap);
+    safeSet('kpi-dyeing', fmtNum(dyeingKg) + ' kg');
+    safeSet('kpi-dy-pending', pending);
+    safeSet('kpi-overdue', (el('kpi-overdue') ? Number(el('kpi-overdue').textContent||0) : 0) + overdue);
   });
-  unsubs.push(unsubMat);
+  unsubs.push(unsubDy);
 
-  // Recent 8 transactions
-  const unsubTxn = onSnapshot(
-    query(collection(db,'transactions'), orderBy('createdAt','desc')),
-    snap => {
-      const rows = [];
-      snap.forEach(d => {
-        if (rows.length >= 8) return;
-        rows.push({ id: d.id, ...d.data() });
-      });
-      renderRecentTransactions(rows);
-    }
-  );
-  unsubs.push(unsubTxn);
+  // ── 4. Lamination Orders — pending count + kg at lam ──────
+  const unsubLm = onSnapshot(collection(db,'lamination_orders'), snap => {
+    let pending = 0, overdue = 0, lamKg = 0;
+    const now = new Date();
+    snap.forEach(d => {
+      const o = d.data();
+      if (o.status === 'processing') {
+        pending++;
+        lamKg += Number(o.inputQty || 0) - Number(o.receivedQty || 0);
+        if (o.expectedDate && new Date(o.expectedDate) < now) overdue++;
+      }
+    });
+    safeSet('kpi-lam', fmtNum(lamKg) + ' kg');
+    safeSet('kpi-lm-pending', pending);
+  });
+  unsubs.push(unsubLm);
 
-  // Processor pending
+  // ── 5. Job Work — pending count + kg at workers ───────────
+  const unsubJW = onSnapshot(collection(db,'job_work'), snap => {
+    let pending = 0, overdue = 0, jwKg = 0;
+    const now = new Date();
+    snap.forEach(d => {
+      const o = d.data();
+      if (o.status === 'issued') {
+        pending++;
+        jwKg += Number(o.issuedQty || 0) - Number(o.receivedQty || 0);
+        if (o.dueDate && new Date(o.dueDate) < now) overdue++;
+      }
+    });
+    safeSet('kpi-jw', fmtNum(jwKg) + ' kg');
+    safeSet('kpi-jwork-pending', pending);
+  });
+  unsubs.push(unsubJW);
+
+  // ── 6. Transfers — processor pending map ──────────────────
   const unsubProc = onSnapshot(collection(db,'transfers'), snap => {
     const map = {};
     snap.forEach(d => {
@@ -232,6 +255,44 @@ function setupRealtimeDashboard() {
     renderProcessorPending(map);
   });
   unsubs.push(unsubProc);
+
+  // ── 7. Today's transactions ────────────────────────────────
+  const unsubTxn = onSnapshot(
+    query(collection(db,'transactions'), orderBy('createdAt','desc')),
+    snap => {
+      const today = new Date().toDateString();
+      let todayCount = 0;
+      const rows = [];
+      snap.forEach(d => {
+        const r = d.data();
+        if (rows.length < 8) rows.push({ id: d.id, ...r });
+        if (r.createdAt) {
+          const dt = r.createdAt.toDate ? r.createdAt.toDate() : new Date(r.createdAt);
+          if (dt.toDateString() === today) todayCount++;
+        }
+      });
+      safeSet('kpi-today-txn', todayCount);
+      renderRecentTransactions(rows);
+    }
+  );
+  unsubs.push(unsubTxn);
+
+  // ── 8. Stock ledger for location bars ─────────────────────
+  const unsubStock = onSnapshot(collection(db, 'stock'), snap => {
+    let factory=0, dyeingS=0, lamS=0, jwS=0, transit=0;
+    snap.forEach(d => {
+      const s = d.data();
+      const loc = (s.location || '').toLowerCase();
+      const bal = Number(s.balance || 0);
+      if (loc.includes('factory') || loc.includes('warehouse')) factory += bal;
+      else if (loc.includes('dye')) dyeingS += bal;
+      else if (loc.includes('lam')) lamS += bal;
+      else if (loc.includes('job') || loc.includes('worker')) jwS += bal;
+      else if (loc.includes('transit')) transit += bal;
+    });
+    renderLocationBars({ factory, dyeing:dyeingS, lam:lamS, jw:jwS, transit });
+  });
+  unsubs.push(unsubStock);
 }
 
 function safeSet(id, val) {
@@ -729,33 +790,158 @@ window.saveGrn = async () => {
 };
 
 // ══════════════════════════════════════════════════════════════
-//  STOCK
+//  STOCK — Full stock management with Add Stock Entry
 // ══════════════════════════════════════════════════════════════
 function loadStock() {
-  const unsub = onSnapshot(
+  // Material datalist for the Add Stock modal
+  getDocs(collection(db,'materials')).then(snap => {
+    const dl = el('sk-mat-list');
+    if (dl) { dl.innerHTML = snap.docs.map(d=>`<option value="${d.data().name||''}">`).join(''); }
+  });
+
+  // ── Stock summary per material (from materials collection) ──
+  const unsubMat = onSnapshot(
+    query(collection(db,'materials'), orderBy('name')),
+    snap => {
+      const tbody = el('stock-summary-tbody');
+      if (!tbody) return;
+      let totalIn=0, totalOut=0, balance=0, low=0, total=0;
+      if (snap.empty) { tbody.innerHTML = emptyRow(8,'No materials found. Add materials in Material Master first.'); return; }
+      tbody.innerHTML = snap.docs.map(d => {
+        const m = d.data();
+        const isLow = Number(m.currentStock||0) < Number(m.reorderLevel||0) && Number(m.reorderLevel||0)>0;
+        total++;
+        balance += Number(m.currentStock||0);
+        if (isLow) low++;
+        return `<tr>
+          <td class="mono c-muted">${m.code||'—'}</td>
+          <td class="fw5">${m.name||'—'}</td>
+          <td>${m.category||'—'}</td>
+          <td>${m.unit||'Kg'}</td>
+          <td class="mono fw5 ${isLow?'c-red':'c-green'}">${fmtNum(m.currentStock||0)} ${m.unit||'kg'}</td>
+          <td class="mono">${fmtNum(m.reorderLevel||0)}</td>
+          <td>${isLow?'<span class="pill p-red">Low Stock</span>':'<span class="pill p-green">OK</span>'}</td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="openAddStockFor('${m.name||''}')">
+              <i class="ti ti-plus"></i> Add Entry
+            </button>
+          </td>
+        </tr>`;
+      }).join('');
+      safeSet('sk-total-mat', total);
+      safeSet('sk-balance', fmtNum(balance));
+      safeSet('sk-low', low);
+    }
+  );
+  unsubs.push(unsubMat);
+
+  // ── Full stock ledger ──────────────────────────────────────
+  const unsubLedger = onSnapshot(
     query(collection(db,'stock'), orderBy('createdAt','desc')),
     snap => {
       const tbody = el('stock-tbody');
       if (!tbody) return;
-      if (snap.empty) { tbody.innerHTML = emptyRow(9,'No stock records yet. Add GRN to generate stock.'); return; }
+      let totalIn=0, totalOut=0;
+      if (snap.empty) { tbody.innerHTML = emptyRow(10,'No stock ledger entries yet. Entries are created when you do GRN, Transfers, Dyeing, Lamination, or Job Work.'); return; }
       tbody.innerHTML = snap.docs.map(d => {
         const s = d.data();
+        totalIn  += Number(s.stockIn||0);
+        totalOut += Number(s.stockOut||0);
         return `<tr>
+          <td class="c-muted" style="font-size:11.5px">${fmtDate(s.createdAt)}</td>
           <td class="fw5">${s.material||'—'}</td>
           <td>${s.location||'—'}</td>
-          <td class="mono c-muted">${s.batch||'—'}</td>
-          <td class="mono c-muted">${s.lotNumber||'—'}</td>
-          <td class="mono c-green">${fmtNum(s.stockIn||0)}</td>
-          <td class="mono c-red">${fmtNum(s.stockOut||0)}</td>
+          <td class="mono c-muted">${s.batch||s.lotNumber||'—'}</td>
+          <td class="mono ${Number(s.stockIn||0)>0?'c-green':''}">${Number(s.stockIn||0)>0?'+'+fmtNum(s.stockIn):'—'}</td>
+          <td class="mono ${Number(s.stockOut||0)>0?'c-red':''}">${Number(s.stockOut||0)>0?'−'+fmtNum(s.stockOut):'—'}</td>
           <td class="mono fw5">${fmtNum(s.balance||0)}</td>
-          <td><span class="pill p-gray">${s.transactionType||'—'}</span></td>
-          <td class="mono c-muted">${s.reference||'—'}</td>
+          <td><span class="pill p-gray" style="font-size:10px">${s.transactionType||'—'}</span></td>
+          <td class="mono c-muted" style="font-size:11.5px">${s.reference||'—'}</td>
+          <td class="c-muted" style="font-size:11px">${s.createdBy||'—'}</td>
         </tr>`;
       }).join('');
+      safeSet('sk-total-in', fmtNum(totalIn));
+      safeSet('sk-total-out', fmtNum(totalOut));
     }
   );
-  unsubs.push(unsub);
+  unsubs.push(unsubLedger);
 }
+
+// ── Open Add Stock modal ──────────────────────────────────────
+window.openAddStock = () => {
+  el('sk-date').value = new Date().toISOString().slice(0,10);
+  el('sk-material').value = '';
+  el('sk-location').value = '';
+  el('sk-txn-type').value = '';
+  el('sk-in').value = '0';
+  el('sk-out').value = '0';
+  el('sk-batch').value = '';
+  el('sk-ref').value = '';
+  el('sk-remarks').value = '';
+  openModal('stock-modal');
+};
+
+// ── Open Add Stock pre-filled with material name ──────────────
+window.openAddStockFor = (matName) => {
+  window.openAddStock();
+  el('sk-material').value = matName;
+};
+
+// ── Save stock entry ──────────────────────────────────────────
+window.saveStockEntry = async () => {
+  const material = el('sk-material').value.trim();
+  const location = el('sk-location').value;
+  const txnType  = el('sk-txn-type').value;
+  const stockIn  = Number(el('sk-in').value) || 0;
+  const stockOut = Number(el('sk-out').value) || 0;
+  const batch    = el('sk-batch').value.trim();
+  const ref      = el('sk-ref').value.trim();
+  const remarks  = el('sk-remarks').value.trim();
+
+  if (!material) { toast('Please enter a material name','error'); return; }
+  if (!location) { toast('Please select a location','error'); return; }
+  if (!txnType)  { toast('Please select a transaction type','error'); return; }
+  if (stockIn === 0 && stockOut === 0) { toast('Enter Stock In or Stock Out quantity','error'); return; }
+
+  try {
+    // Find the material document to get current balance
+    const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',material)));
+    let currentBalance = 0;
+    let matDocId = null;
+
+    if (!matSnap.empty) {
+      const matDoc = matSnap.docs[0];
+      matDocId = matDoc.id;
+      currentBalance = Number(matDoc.data().currentStock || 0);
+    }
+
+    const newBalance = currentBalance + stockIn - stockOut;
+
+    // Add to stock ledger
+    await addDoc(collection(db,'stock'), {
+      material, location, batch, lotNumber: batch,
+      stockIn, stockOut, balance: newBalance,
+      transactionType: txnType,
+      reference: ref || 'Manual',
+      remarks,
+      createdAt: serverTimestamp(),
+      createdBy: currentUser.name || currentUser.email,
+    });
+
+    // Update material current stock
+    if (matDocId) {
+      await updateDoc(doc(db,'materials',matDocId), {
+        currentStock: newBalance,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    await logTransaction(txnType, material, stockIn || stockOut, 'kg', 'completed');
+    toast(`✓ Stock entry saved. New balance: ${fmtNum(newBalance)} kg`);
+    closeModal('stock-modal');
+
+  } catch(e) { toast(e.message,'error'); }
+};
 
 // ══════════════════════════════════════════════════════════════
 //  MATERIAL TRANSFER
