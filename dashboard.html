@@ -80,13 +80,19 @@
 
     <!-- ══════════ DASHBOARD ══════════ -->
     <div class="panel" id="p-dashboard">
-      <div class="kpi-grid g8">
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Factory Stock</div><div class="kpi-val" id="kpi-factory">—</div><div class="kpi-sub">Kg at factory &amp; warehouses</div></div>
         <div class="kpi" style="--ka:var(--purple)"><div class="kpi-label">At Dyeing Houses</div><div class="kpi-val" id="kpi-dyeing">—</div><div class="kpi-sub">Kg pending return</div></div>
         <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">At Lamination</div><div class="kpi-val" id="kpi-lam">—</div><div class="kpi-sub">Kg pending return</div></div>
         <div class="kpi" style="--ka:var(--coral,#ff7a5c)"><div class="kpi-label">At Job Workers</div><div class="kpi-val" id="kpi-jw">—</div><div class="kpi-sub">Kg pending return</div></div>
-        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Open POs</div><div class="kpi-val" id="kpi-pending-po">—</div><div class="kpi-sub">Pending receipt / approval</div></div>
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Open POs</div><div class="kpi-val" id="kpi-pending-po">—</div><div class="kpi-sub">Pending receipt</div></div>
         <div class="kpi" style="--ka:var(--red)"><div class="kpi-label">Low Stock Items</div><div class="kpi-val" id="kpi-lowstock">—</div><div class="kpi-sub">Below reorder level</div></div>
+        <div class="kpi" style="--ka:var(--purple)"><div class="kpi-label">Pending Dyeing</div><div class="kpi-val" id="kpi-dy-pending">—</div><div class="kpi-sub">Orders in process</div></div>
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">Pending Lamination</div><div class="kpi-val" id="kpi-lm-pending">—</div><div class="kpi-sub">Orders in process</div></div>
+        <div class="kpi" style="--ka:var(--coral,#ff7a5c)"><div class="kpi-label">Pending Job Work</div><div class="kpi-val" id="kpi-jwork-pending">—</div><div class="kpi-sub">Issues pending return</div></div>
+        <div class="kpi" style="--ka:var(--red)"><div class="kpi-label">Overdue Orders</div><div class="kpi-val" id="kpi-overdue">—</div><div class="kpi-sub">Past expected date</div></div>
+        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Today's Transactions</div><div class="kpi-val" id="kpi-today-txn">—</div><div class="kpi-sub">All types today</div></div>
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Total Materials</div><div class="kpi-val" id="kpi-total-mat">—</div><div class="kpi-sub">In material master</div></div>
       </div>
       <div class="g2">
         <div class="card" style="margin-bottom:0">
@@ -217,14 +223,63 @@
     <div class="panel" id="p-stock">
       <div class="sec-head">
         <div class="sec-title">Stock Management</div>
-        <div class="sec-actions"><button class="btn btn-secondary" onclick="generateReport('Stock Summary')"><i class="ti ti-download"></i> Export</button></div>
+        <div class="sec-actions">
+          <button class="btn btn-secondary" onclick="generateReport('Stock Summary')"><i class="ti ti-download"></i> Export</button>
+          <button class="btn btn-primary" onclick="openAddStock()"><i class="ti ti-plus"></i> Add Stock Entry</button>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-head"><div class="card-title">Stock Ledger — All Locations</div><span style="font-size:11px;color:var(--text-muted)">Real-time</span></div>
+      <!-- Live KPIs pulled from materials collection -->
+      <div class="kpi-grid g5">
+        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Total Materials</div><div class="kpi-val" id="sk-total-mat">—</div><div class="kpi-sub">Registered items</div></div>
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Total Stock In</div><div class="kpi-val" id="sk-total-in">—</div><div class="kpi-sub">Kg received (all time)</div></div>
+        <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">Total Stock Out</div><div class="kpi-val" id="sk-total-out">—</div><div class="kpi-sub">Kg issued (all time)</div></div>
+        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Net Balance</div><div class="kpi-val" id="sk-balance">—</div><div class="kpi-sub">Kg currently in hand</div></div>
+        <div class="kpi" style="--ka:var(--red)"><div class="kpi-label">Low Stock Items</div><div class="kpi-val" id="sk-low">—</div><div class="kpi-sub">Below reorder level</div></div>
+      </div>
+      <!-- Current stock summary per material -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-head"><div class="card-title">Current Stock per Material</div><span style="font-size:11px;color:var(--text-muted)">From Material Master</span></div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Material</th><th>Location</th><th>Batch</th><th>Lot No.</th><th>Stock In</th><th>Stock Out</th><th>Balance</th><th>Type</th><th>Reference</th></tr></thead>
-            <tbody id="stock-tbody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
+            <thead><tr><th>Code</th><th>Material Name</th><th>Category</th><th>Unit</th><th>Current Stock</th><th>Reorder Level</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="stock-summary-tbody"><tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Full stock ledger -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Stock Ledger — All Movements</div>
+          <span style="font-size:11px;color:var(--text-muted)">Real-time</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <select id="sk-filter-loc" style="background:var(--bg-elevated);border:1px solid var(--border-mid);border-radius:var(--r-sm);padding:6px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text-secondary)">
+            <option value="">All Locations</option>
+            <option>Main Factory</option>
+            <option>Warehouse A</option>
+            <option>Warehouse B</option>
+            <option>Dyeing House</option>
+            <option>Lamination House</option>
+            <option>Job Worker</option>
+          </select>
+          <select id="sk-filter-type" style="background:var(--bg-elevated);border:1px solid var(--border-mid);border-radius:var(--r-sm);padding:6px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text-secondary)">
+            <option value="">All Types</option>
+            <option>GRN</option>
+            <option>Transfer Out</option>
+            <option>Transfer In</option>
+            <option>Dyeing Issue</option>
+            <option>Dyeing Receipt</option>
+            <option>Lamination Issue</option>
+            <option>Lamination Receipt</option>
+            <option>Job Work Issue</option>
+            <option>Job Work Receipt</option>
+            <option>Manual Entry</option>
+          </select>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Material</th><th>Location</th><th>Batch/Lot</th><th>Stock In</th><th>Stock Out</th><th>Balance</th><th>Type</th><th>Reference</th><th>By</th></tr></thead>
+            <tbody id="stock-tbody"><tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -436,6 +491,57 @@
       </div>
     </form>
     <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('sup-modal')">Cancel</button><button class="btn btn-primary" onclick="saveSupplier()">Save Supplier</button></div>
+  </div>
+</div>
+
+<!-- ADD STOCK ENTRY MODAL -->
+<div class="modal-overlay hidden" id="stock-modal">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-head"><h3>Add Stock Entry</h3><button class="btn btn-secondary btn-sm" onclick="closeModal('stock-modal')">✕</button></div>
+    <div class="modal-body">
+      <div class="tip" style="margin-bottom:14px"><i class="ti ti-info-circle"></i><span>Use this to manually record opening stock, stock corrections, or any stock movement not covered by GRN, Transfer, or Processing modules.</span></div>
+      <div class="fgrid">
+        <div class="fg"><label>Date *</label><input type="date" id="sk-date"></div>
+        <div class="fg"><label>Material *</label><input type="text" id="sk-material" placeholder="e.g. PP NW 60 GSM" list="sk-mat-list"><datalist id="sk-mat-list"></datalist></div>
+        <div class="fg">
+          <label>Location *</label>
+          <select id="sk-location">
+            <option value="">Select location...</option>
+            <option>Main Factory</option>
+            <option>Warehouse A</option>
+            <option>Warehouse B</option>
+            <option>Dyeing House</option>
+            <option>Lamination House</option>
+            <option>Job Worker</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Transaction Type *</label>
+          <select id="sk-txn-type">
+            <option value="">Select type...</option>
+            <option>Opening Stock</option>
+            <option>Stock Correction (Add)</option>
+            <option>Stock Correction (Deduct)</option>
+            <option>Manual Entry</option>
+            <option>Damage / Wastage</option>
+            <option>Return from Customer</option>
+          </select>
+        </div>
+        <div class="fg"><label>Stock In (Kg)</label><input type="number" id="sk-in" placeholder="0" min="0" value="0"></div>
+        <div class="fg"><label>Stock Out (Kg)</label><input type="number" id="sk-out" placeholder="0" min="0" value="0"></div>
+        <div class="fg"><label>Batch / Lot No.</label><input type="text" id="sk-batch" placeholder="e.g. LOT-240601"></div>
+        <div class="fg"><label>Reference No.</label><input type="text" id="sk-ref" placeholder="e.g. INV-001"></div>
+        <div class="fg full"><label>Remarks</label><input type="text" id="sk-remarks" placeholder="Optional notes"></div>
+      </div>
+      <div style="background:var(--bg-elevated);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--text-secondary)">
+        <i class="ti ti-info-circle" style="margin-right:5px"></i>
+        This entry will also update the material's current stock in Material Master automatically.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal('stock-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStockEntry()"><i class="ti ti-device-floppy"></i> Save Stock Entry</button>
+    </div>
   </div>
 </div>
 
