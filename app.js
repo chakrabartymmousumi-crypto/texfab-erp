@@ -44,8 +44,7 @@ onAuthStateChanged(auth, async (user) => {
   currentRole = currentUser.role;
   renderUserChip();
   applyRolePermissions();
-  navTo('dashboard');
-  setupRealtimeDashboard();
+  navTo('dashboard'); // this already calls setupRealtimeDashboard via loaders map
 });
 
 // ── Logout ───────────────────────────────────────────────────
@@ -91,10 +90,15 @@ function applyRolePermissions() {
 }
 
 // ── Navigation ───────────────────────────────────────────────
+let dashUnsubs = [];   // dashboard listeners — persist across navigation
+let panelUnsubs = [];  // per-panel listeners — cleared on every navigation
+
 window.navTo = (id) => {
-  // unsubscribe old listeners
-  unsubs.forEach(u => u());
-  unsubs = [];
+  // Clear only the current panel's listeners (not dashboard listeners)
+  panelUnsubs.forEach(u => u());
+  panelUnsubs = [];
+  // Also reset unsubs to point to panelUnsubs so loaders push into the right array
+  unsubs = panelUnsubs;
 
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -106,7 +110,6 @@ window.navTo = (id) => {
   document.querySelector('.content').scrollTop = 0;
   activePanel = id;
 
-  // Load data for the panel
   const loaders = {
     dashboard:   setupRealtimeDashboard,
     material:    loadMaterials,
@@ -164,87 +167,91 @@ document.addEventListener('click', e => {
 
 // ══════════════════════════════════════════════════════════════
 //  DASHBOARD  — real-time KPI aggregation from ALL collections
+//  Uses dashUnsubs so listeners persist while browsing other pages
 // ══════════════════════════════════════════════════════════════
 function setupRealtimeDashboard() {
+  // Kill any existing dashboard listeners before re-subscribing
+  dashUnsubs.forEach(u => u());
+  dashUnsubs = [];
 
-  // ── 1. Materials — low stock + total count ─────────────────
-  const unsubMat = onSnapshot(collection(db, 'materials'), snap => {
-    let low = 0, totalMat = 0;
-    let totalStockKg = 0;
+  // ── 1. Materials — total count + low stock + factory stock ──
+  dashUnsubs.push(onSnapshot(collection(db, 'materials'), snap => {
+    let low = 0, totalMat = 0, totalStockKg = 0;
     snap.forEach(d => {
       const m = d.data();
       totalMat++;
       totalStockKg += Number(m.currentStock || 0);
-      if (Number(m.currentStock||0) < Number(m.reorderLevel||0) && Number(m.reorderLevel||0) > 0) low++;
+      if (Number(m.reorderLevel||0) > 0 && Number(m.currentStock||0) < Number(m.reorderLevel||0)) low++;
     });
     safeSet('kpi-lowstock', low);
     safeSet('kpi-total-mat', totalMat);
     safeSet('kpi-factory', fmtNum(totalStockKg) + ' kg');
     renderLowStockAlerts(snap);
-  });
-  unsubs.push(unsubMat);
+  }));
 
   // ── 2. Purchase Orders — open count ───────────────────────
-  const unsubPO = onSnapshot(
+  dashUnsubs.push(onSnapshot(
     query(collection(db,'purchase_orders'), where('status','in',['draft','sent','partial'])),
     snap => safeSet('kpi-pending-po', snap.size)
-  );
-  unsubs.push(unsubPO);
+  ));
 
-  // ── 3. Dyeing Orders — pending count + kg at dyeing ───────
-  const unsubDy = onSnapshot(collection(db,'dyeing_orders'), snap => {
-    let pending = 0, overdue = 0, dyeingKg = 0;
-    const now = new Date();
+  // ── 3. Dyeing Orders — pending orders + kg ────────────────
+  dashUnsubs.push(onSnapshot(collection(db,'dyeing_orders'), snap => {
+    let pending = 0, dyeingKg = 0, overdue = 0;
+    const now = Date.now();
     snap.forEach(d => {
       const o = d.data();
       if (o.status === 'processing') {
         pending++;
-        dyeingKg += Number(o.inputQty || 0) - Number(o.receivedQty || 0);
-        if (o.expectedDate && new Date(o.expectedDate) < now) overdue++;
+        dyeingKg += Math.max(0, Number(o.inputQty||0) - Number(o.receivedQty||0));
+        if (o.expectedDate && new Date(o.expectedDate).getTime() < now) overdue++;
       }
     });
     safeSet('kpi-dyeing', fmtNum(dyeingKg) + ' kg');
     safeSet('kpi-dy-pending', pending);
-    safeSet('kpi-overdue', (el('kpi-overdue') ? Number(el('kpi-overdue').textContent||0) : 0) + overdue);
-  });
-  unsubs.push(unsubDy);
+    // Store overdue in a data attribute so lamination can add to it
+    const kpiEl = el('kpi-overdue');
+    if (kpiEl) { kpiEl.dataset.dyOverdue = overdue; recalcOverdue(); }
+  }));
 
-  // ── 4. Lamination Orders — pending count + kg at lam ──────
-  const unsubLm = onSnapshot(collection(db,'lamination_orders'), snap => {
-    let pending = 0, overdue = 0, lamKg = 0;
-    const now = new Date();
+  // ── 4. Lamination Orders — pending orders + kg ────────────
+  dashUnsubs.push(onSnapshot(collection(db,'lamination_orders'), snap => {
+    let pending = 0, lamKg = 0, overdue = 0;
+    const now = Date.now();
     snap.forEach(d => {
       const o = d.data();
       if (o.status === 'processing') {
         pending++;
-        lamKg += Number(o.inputQty || 0) - Number(o.receivedQty || 0);
-        if (o.expectedDate && new Date(o.expectedDate) < now) overdue++;
+        lamKg += Math.max(0, Number(o.inputQty||0) - Number(o.receivedQty||0));
+        if (o.expectedDate && new Date(o.expectedDate).getTime() < now) overdue++;
       }
     });
     safeSet('kpi-lam', fmtNum(lamKg) + ' kg');
     safeSet('kpi-lm-pending', pending);
-  });
-  unsubs.push(unsubLm);
+    const kpiEl = el('kpi-overdue');
+    if (kpiEl) { kpiEl.dataset.lmOverdue = overdue; recalcOverdue(); }
+  }));
 
-  // ── 5. Job Work — pending count + kg at workers ───────────
-  const unsubJW = onSnapshot(collection(db,'job_work'), snap => {
-    let pending = 0, overdue = 0, jwKg = 0;
-    const now = new Date();
+  // ── 5. Job Work — pending issues + kg at workers ──────────
+  dashUnsubs.push(onSnapshot(collection(db,'job_work'), snap => {
+    let pending = 0, jwKg = 0, overdue = 0;
+    const now = Date.now();
     snap.forEach(d => {
       const o = d.data();
       if (o.status === 'issued') {
         pending++;
-        jwKg += Number(o.issuedQty || 0) - Number(o.receivedQty || 0);
-        if (o.dueDate && new Date(o.dueDate) < now) overdue++;
+        jwKg += Math.max(0, Number(o.issuedQty||0) - Number(o.receivedQty||0));
+        if (o.dueDate && new Date(o.dueDate).getTime() < now) overdue++;
       }
     });
     safeSet('kpi-jw', fmtNum(jwKg) + ' kg');
     safeSet('kpi-jwork-pending', pending);
-  });
-  unsubs.push(unsubJW);
+    const kpiEl = el('kpi-overdue');
+    if (kpiEl) { kpiEl.dataset.jwOverdue = overdue; recalcOverdue(); }
+  }));
 
-  // ── 6. Transfers — processor pending map ──────────────────
-  const unsubProc = onSnapshot(collection(db,'transfers'), snap => {
+  // ── 6. Transfers — processor pending breakdown ────────────
+  dashUnsubs.push(onSnapshot(collection(db,'transfers'), snap => {
     const map = {};
     snap.forEach(d => {
       const t = d.data();
@@ -253,11 +260,29 @@ function setupRealtimeDashboard() {
       map[key] = (map[key]||0) + Number(t.sentQty||0);
     });
     renderProcessorPending(map);
-  });
-  unsubs.push(unsubProc);
+    // Also build location bars from transfers
+    let dyeingT=0, lamT=0, jwT=0, transitT=0;
+    snap.forEach(d => {
+      const t = d.data();
+      if (!['sent','in_process','partial'].includes(t.status)) return;
+      const loc = (t.toLocation||'').toLowerCase();
+      const qty = Number(t.sentQty||0);
+      if (loc.includes('dye')) dyeingT += qty;
+      else if (loc.includes('lam')) lamT += qty;
+      else if (loc.includes('job')||loc.includes('worker')) jwT += qty;
+      else transitT += qty;
+    });
+    const kpiEl = el('kpi-overdue');
+    if (kpiEl) {
+      kpiEl.dataset.dyeingTransfer = dyeingT;
+      kpiEl.dataset.lamTransfer = lamT;
+      kpiEl.dataset.jwTransfer = jwT;
+      kpiEl.dataset.transitTransfer = transitT;
+    }
+  }));
 
-  // ── 7. Today's transactions ────────────────────────────────
-  const unsubTxn = onSnapshot(
+  // ── 7. Transactions — recent 8 + today count ──────────────
+  dashUnsubs.push(onSnapshot(
     query(collection(db,'transactions'), orderBy('createdAt','desc')),
     snap => {
       const today = new Date().toDateString();
@@ -274,25 +299,21 @@ function setupRealtimeDashboard() {
       safeSet('kpi-today-txn', todayCount);
       renderRecentTransactions(rows);
     }
-  );
-  unsubs.push(unsubTxn);
+  ));
 
-  // ── 8. Stock ledger for location bars ─────────────────────
-  const unsubStock = onSnapshot(collection(db, 'stock'), snap => {
-    let factory=0, dyeingS=0, lamS=0, jwS=0, transit=0;
-    snap.forEach(d => {
-      const s = d.data();
-      const loc = (s.location || '').toLowerCase();
-      const bal = Number(s.balance || 0);
-      if (loc.includes('factory') || loc.includes('warehouse')) factory += bal;
-      else if (loc.includes('dye')) dyeingS += bal;
-      else if (loc.includes('lam')) lamS += bal;
-      else if (loc.includes('job') || loc.includes('worker')) jwS += bal;
-      else if (loc.includes('transit')) transit += bal;
-    });
-    renderLocationBars({ factory, dyeing:dyeingS, lam:lamS, jw:jwS, transit });
-  });
-  unsubs.push(unsubStock);
+  // ── 8. Location bars update when transfers change (already handled above) ─
+  // Location bars are updated inside the transfers listener (listener 6)
+  // Factory stock bar is handled inside the materials listener (listener 1)
+}
+
+// Helper to sum overdue from all sources
+function recalcOverdue() {
+  const kpiEl = el('kpi-overdue');
+  if (!kpiEl) return;
+  const total = Number(kpiEl.dataset.dyOverdue||0) +
+                Number(kpiEl.dataset.lmOverdue||0)  +
+                Number(kpiEl.dataset.jwOverdue||0);
+  kpiEl.textContent = total;
 }
 
 function safeSet(id, val) {
@@ -302,18 +323,22 @@ function safeSet(id, val) {
 function renderLocationBars(data) {
   const container = el('location-bars');
   if (!container) return;
-  const max = Math.max(...Object.values(data), 1);
+  // Get factory stock from kpi-factory element (set by materials listener)
+  const factoryText = (el('kpi-factory') || {}).textContent || '0';
+  const factoryKg = Number(factoryText.replace(/[^0-9]/g,'')) || data.factory || 0;
+  const filled = { ...data, factory: factoryKg };
+  const max = Math.max(...Object.values(filled), 1);
   const entries = [
-    { label:'Factory / Warehouses', val:data.factory, color:'var(--green)' },
-    { label:'Dyeing Houses', val:data.dyeing, color:'var(--purple)' },
-    { label:'Lamination Houses', val:data.lam, color:'var(--amber)' },
-    { label:'Job Workers', val:data.jw, color:'var(--coral,#ff7a5c)' },
-    { label:'In Transit', val:data.transit, color:'var(--text-muted)' },
+    { label:'Factory / Warehouses', val:filled.factory, color:'var(--green)' },
+    { label:'Dyeing Houses',        val:filled.dyeing,  color:'var(--purple)' },
+    { label:'Lamination Houses',    val:filled.lam,     color:'var(--amber)' },
+    { label:'Job Workers',          val:filled.jw,      color:'var(--coral,#ff7a5c)' },
+    { label:'In Transit',           val:filled.transit, color:'var(--text-muted)' },
   ];
   container.innerHTML = entries.map(e => `
     <div class="bar-row">
       <div class="bar-label">${e.label}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(e.val/max*100)}%;background:${e.color}"></div></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${max>0?Math.round(e.val/max*100):0}%;background:${e.color}"></div></div>
       <div class="bar-val" style="color:${e.color}">${fmtNum(e.val)} kg</div>
     </div>`).join('');
 }
