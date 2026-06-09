@@ -11,7 +11,7 @@ import {
   getFirestore,
   collection, doc, addDoc, updateDoc, deleteDoc,
   onSnapshot, query, orderBy, serverTimestamp, getDoc,
-  where, getDocs, writeBatch
+  where, getDocs, writeBatch, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ── Theme toggle — dark / light ───────────────────────────────
@@ -187,6 +187,13 @@ function setupRealtimeDashboard() {
     safeSet('kpi-total-mat', totalMat);
     safeSet('kpi-factory', fmtNum(totalStockKg) + ' kg');
     renderLowStockAlerts(snap);
+  }));
+
+  // ── 1b. Customers — active clients count ──────────────────
+  dashUnsubs.push(onSnapshot(collection(db, 'customers'), snap => {
+    let active = 0;
+    snap.forEach(d => { if ((d.data().status||'active') === 'active') active++; });
+    safeSet('kpi-active-clients', active);
   }));
 
   // ── 2. Purchase Orders — open count ───────────────────────
@@ -708,7 +715,7 @@ function loadPurchaseOrders() {
     snap => {
       const tbody = el('po-tbody');
       if (!tbody) return;
-      if (snap.empty) { tbody.innerHTML = emptyRow(10,'No purchase orders yet'); return; }
+      if (snap.empty) { tbody.innerHTML = emptyRow(11,'No purchase orders yet'); return; }
       let open=0, pendingGrn=0;
       tbody.innerHTML = snap.docs.map(d => {
         const p = d.data();
@@ -719,15 +726,17 @@ function loadPurchaseOrders() {
           <td class="mono c-muted">${p.poNumber||'—'}</td>
           <td>${fmtDate(p.date)}</td>
           <td class="fw5">${p.supplier||'—'}</td>
+          <td>${p.clientName||'—'}</td>
+          <td class="mono c-muted" style="font-size:11px">${p.poReference||'—'}</td>
           <td>${p.material||'—'}</td>
           <td class="mono">${fmtNum(p.orderedQty)} ${p.unit||'kg'}</td>
           <td class="mono c-green">${fmtNum(p.receivedQty||0)}</td>
           <td class="mono ${balance>0?'c-amber':''}">${fmtNum(balance)}</td>
-          <td class="mono">₹${fmtNum(p.value||0)}</td>
           <td>${statusPill(p.status)}</td>
           <td>
             ${p.status!=='complete' ? `<button class="btn btn-secondary btn-sm" onclick="openGrn('${d.id}')">GRN</button>` : ''}
-            <button class="btn btn-secondary btn-sm" style="margin-left:3px" onclick="editPO('${d.id}')">Edit</button>
+            <button class="btn btn-secondary btn-sm" style="margin-left:3px" onclick="editPO('${d.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deletePO('${d.id}')"><i class="ti ti-trash"></i></button>
           </td>
         </tr>`;
       }).join('');
@@ -743,10 +752,16 @@ window.editPO = async (id) => {
   const snap = await getDoc(doc(db,'purchase_orders',id));
   if (!snap.exists()) return;
   const p = snap.data(); const f = el('po-form');
-  f.poSupplier.value=p.supplier||''; f.poMaterial.value=p.material||'';
-  f.poQty.value=p.orderedQty||''; f.poRate.value=p.rate||''; f.poGst.value=p.gstRate||'12';
+  f.poSupplier.value=p.supplier||'';
+  f.poClient.value=p.clientName||'';
+  f.poRef.value=p.poReference||'';
+  f.poMaterial.value=p.material||'';
+  f.poQty.value=p.orderedQty||'';
+  f.poRate.value=p.rate||'';
+  f.poGst.value=p.gstRate||'12';
   f.poRemarks.value=p.remarks||'';
-  el('po-number-display').textContent=p.poNumber||''; el('po-form-id').value=id;
+  el('po-number-display').textContent=p.poNumber||'';
+  el('po-form-id').value=id;
   openModal('po-modal');
 };
 window.savePO = async () => {
@@ -754,7 +769,10 @@ window.savePO = async () => {
   if (!f.poSupplier.value||!f.poMaterial.value||!f.poQty.value) { toast('Fill all required fields','error'); return; }
   const qty = Number(f.poQty.value); const rate = Number(f.poRate.value);
   const data = {
-    supplier:f.poSupplier.value.trim(), material:f.poMaterial.value.trim(),
+    supplier:f.poSupplier.value.trim(),
+    clientName:f.poClient.value.trim(),
+    poReference:f.poRef.value.trim(),
+    material:f.poMaterial.value.trim(),
     orderedQty:qty, rate:rate, gstRate:f.poGst.value,
     value:qty*rate, remarks:f.poRemarks.value.trim(),
     status:'draft', receivedQty:0, updatedAt:serverTimestamp(),
@@ -771,6 +789,11 @@ window.savePO = async () => {
     }
     closeModal('po-modal');
   } catch(e) { toast(e.message,'error'); }
+};
+window.deletePO = async (id) => {
+  if (!confirm('Delete this purchase order? This cannot be undone.')) return;
+  await deleteDoc(doc(db,'purchase_orders',id));
+  toast('Purchase order deleted');
 };
 
 window.openGrn = async (id) => {
@@ -883,6 +906,7 @@ function loadStock() {
           <td><span class="pill p-gray" style="font-size:10px">${s.transactionType||'—'}</span></td>
           <td class="mono c-muted" style="font-size:11.5px">${s.reference||'—'}</td>
           <td class="c-muted" style="font-size:11px">${s.createdBy||'—'}</td>
+          <td><button class="btn btn-danger btn-sm" onclick="deleteStockEntry('${d.id}')"><i class="ti ti-trash"></i></button></td>
         </tr>`;
       }).join('');
       safeSet('sk-total-in', fmtNum(totalIn));
@@ -912,7 +936,7 @@ window.openAddStockFor = (matName) => {
   el('sk-material').value = matName;
 };
 
-// ── Save stock entry ──────────────────────────────────────────
+// ── Save stock entry — uses atomic transaction to prevent race conditions ──
 window.saveStockEntry = async () => {
   const material = el('sk-material').value.trim();
   const location = el('sk-location').value;
@@ -923,29 +947,44 @@ window.saveStockEntry = async () => {
   const ref      = el('sk-ref').value.trim();
   const remarks  = el('sk-remarks').value.trim();
 
-  if (!material) { toast('Please enter a material name','error'); return; }
-  if (!location) { toast('Please select a location','error'); return; }
-  if (!txnType)  { toast('Please select a transaction type','error'); return; }
-  if (stockIn === 0 && stockOut === 0) { toast('Enter Stock In or Stock Out quantity','error'); return; }
+  if (!material) { toast('Please enter a material name', 'error'); return; }
+  if (!location) { toast('Please select a location', 'error'); return; }
+  if (!txnType)  { toast('Please select a transaction type', 'error'); return; }
+  if (stockIn === 0 && stockOut === 0) { toast('Enter Stock In or Stock Out quantity', 'error'); return; }
+
+  const btn = document.querySelector('[onclick="saveStockEntry()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
   try {
-    // Find the material document to get current balance
+    // Find the material doc first (outside transaction — just to get docId)
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',material)));
-    let currentBalance = 0;
-    let matDocId = null;
+
+    let newBalance = stockIn - stockOut; // fallback if material not found
 
     if (!matSnap.empty) {
-      const matDoc = matSnap.docs[0];
-      matDocId = matDoc.id;
-      currentBalance = Number(matDoc.data().currentStock || 0);
+      const matDocRef = doc(db,'materials', matSnap.docs[0].id);
+
+      // Atomic transaction: read current stock → compute new stock → write both atomically
+      await runTransaction(db, async (txn) => {
+        const matDoc = await txn.get(matDocRef);
+        const prevStock = Number(matDoc.exists() ? (matDoc.data().currentStock || 0) : 0);
+        newBalance = prevStock + stockIn - stockOut;
+
+        // Update material current stock atomically
+        txn.update(matDocRef, {
+          currentStock: newBalance,
+          updatedAt: serverTimestamp(),
+        });
+      });
     }
 
-    const newBalance = currentBalance + stockIn - stockOut;
-
-    // Add to stock ledger
+    // After transaction succeeds, add ledger entry
     await addDoc(collection(db,'stock'), {
-      material, location, batch, lotNumber: batch,
-      stockIn, stockOut, balance: newBalance,
+      material, location,
+      batch: batch || '',
+      lotNumber: batch || '',
+      stockIn, stockOut,
+      balance: newBalance,
       transactionType: txnType,
       reference: ref || 'Manual',
       remarks,
@@ -953,19 +992,15 @@ window.saveStockEntry = async () => {
       createdBy: currentUser.name || currentUser.email,
     });
 
-    // Update material current stock
-    if (matDocId) {
-      await updateDoc(doc(db,'materials',matDocId), {
-        currentStock: newBalance,
-        updatedAt: serverTimestamp(),
-      });
-    }
-
     await logTransaction(txnType, material, stockIn || stockOut, 'kg', 'completed');
     toast(`✓ Stock entry saved. New balance: ${fmtNum(newBalance)} kg`);
     closeModal('stock-modal');
 
-  } catch(e) { toast(e.message,'error'); }
+  } catch(e) {
+    toast('Error saving stock: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Save Stock Entry'; }
+  }
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -997,6 +1032,7 @@ function loadTransfers() {
           <td>
             ${['sent','in_process'].includes(t.status) ? `<button class="btn btn-secondary btn-sm" onclick="receiveTransfer('${d.id}')">Receive</button>` : ''}
             ${t.status==='partial' ? `<button class="btn btn-secondary btn-sm" onclick="receiveTransfer('${d.id}')">Return</button>` : ''}
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteTransfer('${d.id}')"><i class="ti ti-trash"></i></button>
           </td>
         </tr>`;
       }).join('');
@@ -1111,6 +1147,7 @@ function loadDyeingOrders() {
           <td>${statusPill(dy.status)}</td>
           <td>
             ${dy.status==='processing' ? `<button class="btn btn-secondary btn-sm" onclick="receiveDyeing('${d.id}')">Receive</button>` : ''}
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteDyeing('${d.id}')"><i class="ti ti-trash"></i></button>
           </td>
         </tr>`;
       }).join('');
@@ -1208,7 +1245,10 @@ function loadLaminationOrders() {
           <td class="mono c-amber">${lm.wastage ? fmtNum(lm.wastage) : '—'}</td>
           <td class="mono c-amber">${fmtNum(Number(lm.inputQty||0)-Number(lm.receivedQty||0))}</td>
           <td>${statusPill(lm.status)}</td>
-          <td>${lm.status==='processing' ? `<button class="btn btn-secondary btn-sm" onclick="receiveLamination('${d.id}')">Receive</button>` : ''}</td>
+          <td>
+            ${lm.status==='processing' ? `<button class="btn btn-secondary btn-sm" onclick="receiveLamination('${d.id}')">Receive</button>` : ''}
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteLamination('${d.id}')"><i class="ti ti-trash"></i></button>
+          </td>
         </tr>`;
       }).join('');
     }
@@ -1304,7 +1344,10 @@ function loadJobWork() {
           <td class="mono">₹${fmtNum(j.jobCharges||0)}</td>
           <td class="${isOverdue?'c-red':''}">${j.dueDate||'—'}</td>
           <td>${isOverdue ? '<span class="pill p-red">Overdue</span>' : statusPill(j.status)}</td>
-          <td>${j.status==='issued' ? `<button class="btn btn-secondary btn-sm" onclick="receiveJobWork('${d.id}')">Receive</button>` : ''}</td>
+          <td>
+            ${j.status==='issued' ? `<button class="btn btn-secondary btn-sm" onclick="receiveJobWork('${d.id}')">Receive</button>` : ''}
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteJobWork('${d.id}')"><i class="ti ti-trash"></i></button>
+          </td>
         </tr>`;
       }).join('');
       safeSet('jw-pending', pending); safeSet('jw-overdue', overdue); safeSet('jw-charges', '₹'+fmtNum(totalCharges));
@@ -1376,6 +1419,35 @@ window.saveJobWorkReceipt = async () => {
     toast('Job work receipt saved. Stock updated.');
     closeModal('jw-recv-modal');
   } catch(e) { toast(e.message,'error'); }
+};
+
+// ══════════════════════════════════════════════════════════════
+//  DELETE FUNCTIONS — all pages
+// ══════════════════════════════════════════════════════════════
+window.deleteTransfer = async (id) => {
+  if (!confirm('Delete this transfer challan? The stock movement will NOT be automatically reversed. Delete only if it was entered by mistake.')) return;
+  await deleteDoc(doc(db,'transfers',id));
+  toast('Transfer challan deleted');
+};
+window.deleteDyeing = async (id) => {
+  if (!confirm('Delete this dyeing order? This will not reverse the stock deduction. Delete only if it was entered by mistake.')) return;
+  await deleteDoc(doc(db,'dyeing_orders',id));
+  toast('Dyeing order deleted');
+};
+window.deleteLamination = async (id) => {
+  if (!confirm('Delete this lamination order? This will not reverse the stock deduction. Delete only if it was entered by mistake.')) return;
+  await deleteDoc(doc(db,'lamination_orders',id));
+  toast('Lamination order deleted');
+};
+window.deleteJobWork = async (id) => {
+  if (!confirm('Delete this job work entry? This will not reverse the stock deduction. Delete only if it was entered by mistake.')) return;
+  await deleteDoc(doc(db,'job_work',id));
+  toast('Job work entry deleted');
+};
+window.deleteStockEntry = async (id) => {
+  if (!confirm('Delete this stock ledger entry? Note: this will NOT auto-correct the material current stock. Use only to remove duplicate or error entries.')) return;
+  await deleteDoc(doc(db,'stock',id));
+  toast('Stock ledger entry deleted');
 };
 
 // ══════════════════════════════════════════════════════════════
