@@ -736,7 +736,7 @@ function loadPurchaseOrders() {
           <td>
             ${p.status!=='complete' ? `<button class="btn btn-secondary btn-sm" onclick="openGrn('${d.id}')">GRN</button>` : ''}
             <button class="btn btn-secondary btn-sm" style="margin-left:3px" onclick="editPO('${d.id}')"><i class="ti ti-edit"></i></button>
-            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deletePO('${d.id}')"><i class="ti ti-trash"></i></button>
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deletePO('${d.id}')">🗑 Del</button>
           </td>
         </tr>`;
       }).join('');
@@ -818,19 +818,25 @@ window.saveGrn = async () => {
   const status = newReceived >= Number(p.orderedQty) ? 'complete' : 'partial';
   try {
     await updateDoc(doc(db,'purchase_orders',id), { receivedQty:newReceived, status, updatedAt:serverTimestamp() });
-    // Update material stock
+    // Update material stock atomically — for...of ensures each await is properly waited
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',p.material)));
-    matSnap.forEach(async md => {
-      const newStock = Number(md.data().currentStock||0) + qty;
-      await updateDoc(doc(db,'materials',md.id), { currentStock:newStock, updatedAt:serverTimestamp() });
-      // Add stock ledger entry
-      await addDoc(collection(db,'stock'), {
-        material:p.material, location:'Main Factory',
-        stockIn:qty, stockOut:0, balance:newStock,
-        transactionType:'GRN', reference:p.poNumber,
-        createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
+    for (const md of matSnap.docs) {
+      const matDocRef = doc(db,'materials', md.id);
+      let newStock = 0;
+      await runTransaction(db, async (txn) => {
+        const fresh = await txn.get(matDocRef);
+        const cur = Number(fresh.exists() ? (fresh.data().currentStock||0) : 0);
+        newStock = cur + qty;
+        txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
       });
-    });
+      await addDoc(collection(db,'stock'), {
+        material: p.material, location: 'Main Factory',
+        stockIn: qty, stockOut: 0, balance: newStock,
+        transactionType: 'GRN', reference: p.poNumber,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.name || currentUser.email,
+      });
+    }
     await logTransaction('GRN', p.material, qty, 'kg', 'received');
     toast('GRN saved. Stock updated.');
     closeModal('grn-modal');
@@ -906,7 +912,7 @@ function loadStock() {
           <td><span class="pill p-gray" style="font-size:10px">${s.transactionType||'—'}</span></td>
           <td class="mono c-muted" style="font-size:11.5px">${s.reference||'—'}</td>
           <td class="c-muted" style="font-size:11px">${s.createdBy||'—'}</td>
-          <td><button class="btn btn-danger btn-sm" onclick="deleteStockEntry('${d.id}')"><i class="ti ti-trash"></i></button></td>
+          <td><button class="btn btn-danger btn-sm" onclick="deleteStockEntry('${d.id}')">🗑 Del</button></td>
         </tr>`;
       }).join('');
       safeSet('sk-total-in', fmtNum(totalIn));
@@ -1032,7 +1038,7 @@ function loadTransfers() {
           <td>
             ${['sent','in_process'].includes(t.status) ? `<button class="btn btn-secondary btn-sm" onclick="receiveTransfer('${d.id}')">Receive</button>` : ''}
             ${t.status==='partial' ? `<button class="btn btn-secondary btn-sm" onclick="receiveTransfer('${d.id}')">Return</button>` : ''}
-            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteTransfer('${d.id}')"><i class="ti ti-trash"></i></button>
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteTransfer('${d.id}')">🗑 Del</button>
           </td>
         </tr>`;
       }).join('');
@@ -1058,18 +1064,24 @@ window.saveTransfer = async () => {
     const num = await generateNumber('TC');
     data.tcNumber = num;
     await addDoc(collection(db,'transfers'), data);
-    // Deduct from source stock
+    // Deduct from source stock using runTransaction + for...of
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',data.material)));
-    matSnap.forEach(async md => {
-      const cur = Number(md.data().currentStock||0);
-      await updateDoc(doc(db,'materials',md.id), { currentStock: Math.max(0,cur-data.sentQty), updatedAt:serverTimestamp() });
+    for (const md of matSnap.docs) {
+      const matDocRef = doc(db,'materials', md.id);
+      let newStock = 0;
+      await runTransaction(db, async (txn) => {
+        const fresh = await txn.get(matDocRef);
+        const cur = Number(fresh.exists() ? (fresh.data().currentStock||0) : 0);
+        newStock = Math.max(0, cur - data.sentQty);
+        txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
+      });
       await addDoc(collection(db,'stock'), {
         material:data.material, location:data.fromLocation,
-        stockIn:0, stockOut:data.sentQty, balance:Math.max(0,cur-data.sentQty),
-        transactionType:'Transfer Out', reference:num, createdAt:serverTimestamp(),
-        createdBy:currentUser.name||currentUser.email,
+        stockIn:0, stockOut:data.sentQty, balance:newStock,
+        transactionType:'Transfer Out', reference:num,
+        createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
       });
-    });
+    }
     await logTransaction('Transfer', data.material, data.sentQty, 'kg', 'sent');
     toast(`Transfer Challan ${num} created`);
     closeModal('tc-modal');
@@ -1096,21 +1108,26 @@ window.saveReceiveTransfer = async () => {
   const already = Number(t.receivedQty||0);
   const total = already + recvQty;
   const status = total >= Number(t.sentQty) ? 'returned' : 'partial';
+  const net = Math.max(0, recvQty - wastage);
   try {
     await updateDoc(doc(db,'transfers',id), { receivedQty:total, wastage:(Number(t.wastage||0)+wastage), status, updatedAt:serverTimestamp() });
-    // Add back to factory stock
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',t.material)));
-    matSnap.forEach(async md => {
-      const cur = Number(md.data().currentStock||0);
-      const net = recvQty - wastage;
-      await updateDoc(doc(db,'materials',md.id), { currentStock: cur+net, updatedAt:serverTimestamp() });
+    for (const md of matSnap.docs) {
+      const matDocRef = doc(db,'materials', md.id);
+      let newStock = 0;
+      await runTransaction(db, async (txn) => {
+        const fresh = await txn.get(matDocRef);
+        const cur = Number(fresh.exists() ? (fresh.data().currentStock||0) : 0);
+        newStock = cur + net;
+        txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
+      });
       await addDoc(collection(db,'stock'), {
         material:t.material, location:'Main Factory',
-        stockIn:net, stockOut:0, balance:cur+net,
+        stockIn:net, stockOut:0, balance:newStock,
         transactionType:'Transfer In', reference:t.tcNumber,
         createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
       });
-    });
+    }
     toast('Transfer received. Stock updated.');
     closeModal('recv-modal');
   } catch(e) { toast(e.message,'error'); }
@@ -1147,7 +1164,7 @@ function loadDyeingOrders() {
           <td>${statusPill(dy.status)}</td>
           <td>
             ${dy.status==='processing' ? `<button class="btn btn-secondary btn-sm" onclick="receiveDyeing('${d.id}')">Receive</button>` : ''}
-            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteDyeing('${d.id}')"><i class="ti ti-trash"></i></button>
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteDyeing('${d.id}')">🗑 Del</button>
           </td>
         </tr>`;
       }).join('');
@@ -1202,20 +1219,25 @@ window.saveDyeingReceipt = async () => {
       receivedQty:recvQty, outputQty:recvQty, wastage, rejection,
       status:'received', updatedAt:serverTimestamp()
     });
-    // Add back to stock
     const snap = await getDoc(doc(db,'dyeing_orders',id));
     const d = snap.data();
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',d.material)));
-    matSnap.forEach(async md => {
-      const cur = Number(md.data().currentStock||0);
-      await updateDoc(doc(db,'materials',md.id), { currentStock:cur+recvQty, updatedAt:serverTimestamp() });
+    for (const md of matSnap.docs) {
+      const matDocRef = doc(db,'materials', md.id);
+      let newStock = 0;
+      await runTransaction(db, async (txn) => {
+        const fresh = await txn.get(matDocRef);
+        const cur = Number(fresh.exists() ? (fresh.data().currentStock||0) : 0);
+        newStock = cur + recvQty;
+        txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
+      });
       await addDoc(collection(db,'stock'), {
         material:d.material, location:'Main Factory',
-        stockIn:recvQty, stockOut:0, balance:cur+recvQty,
+        stockIn:recvQty, stockOut:0, balance:newStock,
         transactionType:'Dyeing Receipt', reference:d.orderNumber,
         createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
       });
-    });
+    }
     toast('Dyeing receipt saved. Stock updated.');
     closeModal('dy-recv-modal');
   } catch(e) { toast(e.message,'error'); }
@@ -1247,7 +1269,7 @@ function loadLaminationOrders() {
           <td>${statusPill(lm.status)}</td>
           <td>
             ${lm.status==='processing' ? `<button class="btn btn-secondary btn-sm" onclick="receiveLamination('${d.id}')">Receive</button>` : ''}
-            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteLamination('${d.id}')"><i class="ti ti-trash"></i></button>
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteLamination('${d.id}')">🗑 Del</button>
           </td>
         </tr>`;
       }).join('');
@@ -1301,16 +1323,22 @@ window.saveLaminationReceipt = async () => {
     const snap = await getDoc(doc(db,'lamination_orders',id));
     const lm = snap.data();
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',lm.material)));
-    matSnap.forEach(async md => {
-      const cur = Number(md.data().currentStock||0);
-      await updateDoc(doc(db,'materials',md.id), { currentStock:cur+recvQty, updatedAt:serverTimestamp() });
+    for (const md of matSnap.docs) {
+      const matDocRef = doc(db,'materials', md.id);
+      let newStock = 0;
+      await runTransaction(db, async (txn) => {
+        const fresh = await txn.get(matDocRef);
+        const cur = Number(fresh.exists() ? (fresh.data().currentStock||0) : 0);
+        newStock = cur + recvQty;
+        txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
+      });
       await addDoc(collection(db,'stock'), {
         material:lm.material, location:'Main Factory',
-        stockIn:recvQty, stockOut:0, balance:cur+recvQty,
+        stockIn:recvQty, stockOut:0, balance:newStock,
         transactionType:'Lamination Receipt', reference:lm.orderNumber,
         createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
       });
-    });
+    }
     toast('Lamination receipt saved. Stock updated.');
     closeModal('lm-recv-modal');
   } catch(e) { toast(e.message,'error'); }
@@ -1346,7 +1374,7 @@ function loadJobWork() {
           <td>${isOverdue ? '<span class="pill p-red">Overdue</span>' : statusPill(j.status)}</td>
           <td>
             ${j.status==='issued' ? `<button class="btn btn-secondary btn-sm" onclick="receiveJobWork('${d.id}')">Receive</button>` : ''}
-            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteJobWork('${d.id}')"><i class="ti ti-trash"></i></button>
+            <button class="btn btn-danger btn-sm" style="margin-left:3px" onclick="deleteJobWork('${d.id}')">🗑 Del</button>
           </td>
         </tr>`;
       }).join('');
@@ -1400,22 +1428,28 @@ window.saveJobWorkReceipt = async () => {
     const snap = await getDoc(doc(db,'job_work',id));
     const j = snap.data();
     const charges = Number(j.jobRate||0) * recvQty;
+    const net = Math.max(0, recvQty - wastage - rejection);
     await updateDoc(doc(db,'job_work',id), {
       receivedQty:recvQty, wastage, rejection, jobCharges:charges,
       status:'received', updatedAt:serverTimestamp()
     });
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',j.material)));
-    matSnap.forEach(async md => {
-      const cur = Number(md.data().currentStock||0);
-      const net = recvQty - wastage - rejection;
-      await updateDoc(doc(db,'materials',md.id), { currentStock:cur+net, updatedAt:serverTimestamp() });
+    for (const md of matSnap.docs) {
+      const matDocRef = doc(db,'materials', md.id);
+      let newStock = 0;
+      await runTransaction(db, async (txn) => {
+        const fresh = await txn.get(matDocRef);
+        const cur = Number(fresh.exists() ? (fresh.data().currentStock||0) : 0);
+        newStock = cur + net;
+        txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
+      });
       await addDoc(collection(db,'stock'), {
         material:j.material, location:'Main Factory',
-        stockIn:net, stockOut:0, balance:cur+net,
+        stockIn:net, stockOut:0, balance:newStock,
         transactionType:'Job Work Receipt', reference:j.jobNumber,
         createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
       });
-    });
+    }
     toast('Job work receipt saved. Stock updated.');
     closeModal('jw-recv-modal');
   } catch(e) { toast(e.message,'error'); }
@@ -1423,31 +1457,83 @@ window.saveJobWorkReceipt = async () => {
 
 // ══════════════════════════════════════════════════════════════
 //  DELETE FUNCTIONS — all pages
+//  Stock is recalculated from the full ledger after each delete
 // ══════════════════════════════════════════════════════════════
+
+// Helper: recalculate a material's currentStock by summing all its ledger entries
+async function recalcMaterialStock(materialName) {
+  if (!materialName) return;
+  const ledgerSnap = await getDocs(
+    query(collection(db,'stock'), where('material','==',materialName))
+  );
+  let totalIn = 0, totalOut = 0;
+  ledgerSnap.forEach(d => {
+    totalIn  += Number(d.data().stockIn  || 0);
+    totalOut += Number(d.data().stockOut || 0);
+  });
+  const recalcStock = Math.max(0, totalIn - totalOut);
+  const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',materialName)));
+  for (const md of matSnap.docs) {
+    await updateDoc(doc(db,'materials',md.id), {
+      currentStock: recalcStock,
+      updatedAt: serverTimestamp(),
+    });
+  }
+  return recalcStock;
+}
+
 window.deleteTransfer = async (id) => {
-  if (!confirm('Delete this transfer challan? The stock movement will NOT be automatically reversed. Delete only if it was entered by mistake.')) return;
-  await deleteDoc(doc(db,'transfers',id));
-  toast('Transfer challan deleted');
+  if (!confirm('Delete this transfer challan?\n\nNote: The stock movement will NOT be auto-reversed. Delete only if entered by mistake.')) return;
+  try {
+    const snap = await getDoc(doc(db,'transfers',id));
+    await deleteDoc(doc(db,'transfers',id));
+    toast('Transfer challan deleted');
+  } catch(e) { toast(e.message,'error'); }
 };
+
 window.deleteDyeing = async (id) => {
-  if (!confirm('Delete this dyeing order? This will not reverse the stock deduction. Delete only if it was entered by mistake.')) return;
-  await deleteDoc(doc(db,'dyeing_orders',id));
-  toast('Dyeing order deleted');
+  if (!confirm('Delete this dyeing order?\n\nNote: Stock deduction will NOT be reversed. Delete only if entered by mistake.')) return;
+  try {
+    await deleteDoc(doc(db,'dyeing_orders',id));
+    toast('Dyeing order deleted');
+  } catch(e) { toast(e.message,'error'); }
 };
+
 window.deleteLamination = async (id) => {
-  if (!confirm('Delete this lamination order? This will not reverse the stock deduction. Delete only if it was entered by mistake.')) return;
-  await deleteDoc(doc(db,'lamination_orders',id));
-  toast('Lamination order deleted');
+  if (!confirm('Delete this lamination order?\n\nNote: Stock deduction will NOT be reversed. Delete only if entered by mistake.')) return;
+  try {
+    await deleteDoc(doc(db,'lamination_orders',id));
+    toast('Lamination order deleted');
+  } catch(e) { toast(e.message,'error'); }
 };
+
 window.deleteJobWork = async (id) => {
-  if (!confirm('Delete this job work entry? This will not reverse the stock deduction. Delete only if it was entered by mistake.')) return;
-  await deleteDoc(doc(db,'job_work',id));
-  toast('Job work entry deleted');
+  if (!confirm('Delete this job work entry?\n\nNote: Stock deduction will NOT be reversed. Delete only if entered by mistake.')) return;
+  try {
+    await deleteDoc(doc(db,'job_work',id));
+    toast('Job work entry deleted');
+  } catch(e) { toast(e.message,'error'); }
 };
+
+// Delete stock ledger entry AND recalculate material stock from remaining entries
 window.deleteStockEntry = async (id) => {
-  if (!confirm('Delete this stock ledger entry? Note: this will NOT auto-correct the material current stock. Use only to remove duplicate or error entries.')) return;
-  await deleteDoc(doc(db,'stock',id));
-  toast('Stock ledger entry deleted');
+  if (!confirm('Delete this stock ledger entry?\n\nThe material\'s total stock will be automatically recalculated from all remaining entries.')) return;
+  try {
+    // Get material name before deleting
+    const snap = await getDoc(doc(db,'stock',id));
+    const materialName = snap.exists() ? snap.data().material : null;
+
+    // Delete the entry
+    await deleteDoc(doc(db,'stock',id));
+
+    // Recalculate stock from all remaining ledger entries for this material
+    if (materialName) {
+      const newStock = await recalcMaterialStock(materialName);
+      toast(`✓ Entry deleted. Stock for "${materialName}" recalculated to ${fmtNum(newStock)} kg`);
+    } else {
+      toast('Stock entry deleted');
+    }
+  } catch(e) { toast(e.message,'error'); }
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -1527,7 +1613,7 @@ function loadUsers() {
               ? '<span class="c-muted" style="font-size:11.5px">You</span>'
               : `<div style="display:flex;gap:5px">
                    <button class="btn btn-secondary btn-sm" onclick="openEditUser('${d.id}')"><i class="ti ti-edit"></i> Edit</button>
-                   <button class="btn btn-danger btn-sm" onclick="openDeleteUser('${d.id}','${(u.name||'').replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+                   <button class="btn btn-danger btn-sm" onclick="openDeleteUser('${d.id}','${(u.name||'').replace(/'/g,"\\'")}')">🗑 Del</button>
                  </div>`
             }
           </td>
@@ -1788,16 +1874,25 @@ async function logTransaction(type, material, qty, unit, status) {
 
 async function deductStock(material, qty, location, reference, txnType) {
   const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',material)));
-  matSnap.forEach(async md => {
-    const cur = Number(md.data().currentStock||0);
-    const newStock = Math.max(0, cur - qty);
-    await updateDoc(doc(db,'materials',md.id), { currentStock:newStock, updatedAt:serverTimestamp() });
-    await addDoc(collection(db,'stock'), {
-      material, location, stockIn:0, stockOut:qty, balance:newStock,
-      transactionType:txnType, reference,
-      createdAt:serverTimestamp(), createdBy:currentUser.name||currentUser.email,
+  // Use for...of so each await is properly waited on — forEach(async) does NOT await
+  for (const md of matSnap.docs) {
+    const matDocRef = doc(db,'materials', md.id);
+    let newStock = 0;
+    // Atomic read-compute-write
+    await runTransaction(db, async (txn) => {
+      const fresh = await txn.get(matDocRef);
+      const cur = Number(fresh.exists() ? (fresh.data().currentStock || 0) : 0);
+      newStock = Math.max(0, cur - qty);
+      txn.update(matDocRef, { currentStock: newStock, updatedAt: serverTimestamp() });
     });
-  });
+    await addDoc(collection(db,'stock'), {
+      material, location,
+      stockIn: 0, stockOut: qty, balance: newStock,
+      transactionType: txnType, reference,
+      createdAt: serverTimestamp(),
+      createdBy: currentUser.name || currentUser.email,
+    });
+  }
 }
 
 function canDelete() { return ['admin','store'].includes(currentRole); }
