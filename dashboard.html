@@ -81,7 +81,8 @@
     <!-- ══════════ DASHBOARD ══════════ -->
     <div class="panel" id="p-dashboard">
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Factory Stock</div><div class="kpi-val" id="kpi-factory">—</div><div class="kpi-sub">Kg at factory &amp; warehouses</div></div>
+        <div class="kpi" style="--ka:var(--green)"><div class="kpi-label">Total Available Stock</div><div class="kpi-val" id="kpi-factory">—</div><div class="kpi-sub">Kg across all materials</div></div>
+        <div class="kpi" style="--ka:var(--blue)"><div class="kpi-label">Active Clients</div><div class="kpi-val" id="kpi-active-clients">—</div><div class="kpi-sub">Total registered customers</div></div>
         <div class="kpi" style="--ka:var(--purple)"><div class="kpi-label">At Dyeing Houses</div><div class="kpi-val" id="kpi-dyeing">—</div><div class="kpi-sub">Kg pending return</div></div>
         <div class="kpi" style="--ka:var(--amber)"><div class="kpi-label">At Lamination</div><div class="kpi-val" id="kpi-lam">—</div><div class="kpi-sub">Kg pending return</div></div>
         <div class="kpi" style="--ka:var(--coral,#ff7a5c)"><div class="kpi-label">At Job Workers</div><div class="kpi-val" id="kpi-jw">—</div><div class="kpi-sub">Kg pending return</div></div>
@@ -212,7 +213,7 @@
         <div class="card-head"><div class="card-title">Purchase Orders</div></div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>PO No.</th><th>Date</th><th>Supplier</th><th>Material</th><th>Ordered</th><th>Received</th><th>Balance</th><th>Value</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>PO No.</th><th>Date</th><th>Supplier</th><th>Client Name</th><th>PO Ref</th><th>Material</th><th>Ordered</th><th>Received</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody id="po-tbody"><tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
           </table>
         </div>
@@ -278,7 +279,7 @@
         </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Date</th><th>Material</th><th>Location</th><th>Batch/Lot</th><th>Stock In</th><th>Stock Out</th><th>Balance</th><th>Type</th><th>Reference</th><th>By</th></tr></thead>
+            <thead><tr><th>Date</th><th>Material</th><th>Location</th><th>Batch/Lot</th><th>Stock In</th><th>Stock Out</th><th>Balance</th><th>Type</th><th>Reference</th><th>By</th><th></th></tr></thead>
             <tbody id="stock-tbody"><tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:30px">Loading...</td></tr></tbody>
           </table>
         </div>
@@ -616,6 +617,8 @@
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">PO Number: <span id="po-number-display" class="mono">Auto-generated</span></div>
       <div class="fgrid">
         <div class="fg"><label>Supplier *</label><input name="poSupplier" placeholder="Supplier name" required></div>
+        <div class="fg"><label>Client Name</label><input name="poClient" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Reference No.</label><input name="poRef" placeholder="Client PO reference"></div>
         <div class="fg"><label>Material *</label><input name="poMaterial" placeholder="Material name" required></div>
         <div class="fg"><label>Qty (Kg) *</label><input name="poQty" type="number" placeholder="0" required></div>
         <div class="fg"><label>Rate (₹/Kg)</label><input name="poRate" type="number" placeholder="0"></div>
