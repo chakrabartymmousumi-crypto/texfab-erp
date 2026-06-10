@@ -169,55 +169,98 @@ document.addEventListener('click', e => {
 //  DASHBOARD  — real-time KPI aggregation from ALL collections
 //  Uses dashUnsubs so listeners persist while browsing other pages
 // ══════════════════════════════════════════════════════════════
+
+// Shared state for Active Clients deduplication across all collection listeners
+const _clientSets = {};     // key = collection name, value = Set of normalised client names
+function _recalcActiveClients() {
+  const merged = new Set();
+  Object.values(_clientSets).forEach(s => s.forEach(v => merged.add(v)));
+  safeSet('kpi-active-clients', merged.size);
+}
+
+// Shared state for Total Materials deduplication across stock ledger listener
+let _stockMaterialSet = new Set();
+
 function setupRealtimeDashboard() {
-  // Kill any existing dashboard listeners before re-subscribing
   dashUnsubs.forEach(u => u());
   dashUnsubs = [];
 
-  // ── 1. Materials — total count + low stock ─────────────────
-  //    kpi-factory (Total Available Stock) comes from stock ledger listener below
-  dashUnsubs.push(onSnapshot(collection(db, 'materials'), snap => {
-    let low = 0, totalMat = 0;
-    snap.forEach(d => {
-      const m = d.data();
-      totalMat++;
-      if (Number(m.reorderLevel||0) > 0 && Number(m.currentStock||0) < Number(m.reorderLevel||0)) low++;
-    });
-    safeSet('kpi-lowstock', low);
-    safeSet('kpi-total-mat', totalMat);
-    renderLowStockAlerts(snap);
-  }));
-
-  // ── 1a. Total Available Stock — stock ledger sum ───────────
-  //    sum(stockIn) - sum(stockOut) across ALL ledger entries
-  //    Same formula as sk-balance on the stock page — always accurate
+  // ── 1. kpi-total-mat — distinct material names from the stock ledger ──────
+  //    Reads the same `stock` collection as the stock page.
+  //    Uses a Set to deduplicate: "PP NW 60 GSM" entered 10 times = counted once.
   dashUnsubs.push(onSnapshot(collection(db, 'stock'),
     snap => {
       let totalIn = 0, totalOut = 0;
+      _stockMaterialSet = new Set();
       snap.forEach(d => {
-        totalIn  += Number(d.data().stockIn  || 0);
-        totalOut += Number(d.data().stockOut || 0);
+        const s = d.data();
+        totalIn  += Number(s.stockIn  || 0);
+        totalOut += Number(s.stockOut || 0);
+        // Normalise: trim + lowercase so "PP NW" and "pp nw" are the same
+        const mat = (s.material || '').trim().toLowerCase();
+        if (mat) _stockMaterialSet.add(mat);
       });
+      // kpi-total-mat = distinct materials that have ever had a stock entry
+      safeSet('kpi-total-mat', _stockMaterialSet.size);
+      // kpi-factory = net stock across all entries
       const netStock = Math.max(0, totalIn - totalOut);
       safeSet('kpi-factory', fmtNum(netStock) + ' kg');
     },
-    err => { console.error('Dashboard stock listener error:', err); }
+    err => console.error('Dashboard stock listener error:', err)
   ));
 
-  // ── 1b. Customers — active clients count ──────────────────
-  dashUnsubs.push(onSnapshot(collection(db, 'customers'), snap => {
-    let active = 0;
-    snap.forEach(d => { if ((d.data().status||'active') === 'active') active++; });
-    safeSet('kpi-active-clients', active);
+  // ── 2. kpi-lowstock — materials below reorder level ───────────────────────
+  dashUnsubs.push(onSnapshot(collection(db, 'materials'), snap => {
+    let low = 0;
+    snap.forEach(d => {
+      const m = d.data();
+      if (Number(m.reorderLevel||0) > 0 && Number(m.currentStock||0) < Number(m.reorderLevel||0)) low++;
+    });
+    safeSet('kpi-lowstock', low);
+    renderLowStockAlerts(snap);
   }));
 
-  // ── 2. Purchase Orders — open count ───────────────────────
+  // ── 3. kpi-active-clients — unique client names across ALL 9 collections ──
+  //    Each collection listener writes its own Set into _clientSets[key].
+  //    _recalcActiveClients() merges all Sets and updates the tile.
+  //    Normalisation: trim + lowercase so "ABC Traders" == "abc traders" == " ABC Traders ".
+  const normalise = v => (v || '').trim().toLowerCase();
+
+  const clientCollections = [
+    { key: 'stock',             field: 'clientName' },
+    { key: 'transfers',         field: 'clientName' },
+    { key: 'dyeing_orders',     field: 'clientName' },
+    { key: 'lamination_orders', field: 'clientName' },
+    { key: 'job_work',          field: 'clientName' },
+    { key: 'purchase_orders',   field: 'clientName' },
+    { key: 'customers',         field: 'name'       },   // customer name IS the client
+    { key: 'materials',         field: 'clientName' },
+    { key: 'suppliers',         field: 'clientName' },
+  ];
+
+  clientCollections.forEach(({ key, field }) => {
+    _clientSets[key] = new Set();   // initialise empty so merge works from the start
+    dashUnsubs.push(onSnapshot(collection(db, key),
+      snap => {
+        const s = new Set();
+        snap.forEach(d => {
+          const val = normalise(d.data()[field]);
+          if (val) s.add(val);
+        });
+        _clientSets[key] = s;
+        _recalcActiveClients();
+      },
+      err => console.error(`Client listener error (${key}):`, err)
+    ));
+  });
+
+  // ── 4. Purchase Orders — open count ───────────────────────
   dashUnsubs.push(onSnapshot(
     query(collection(db,'purchase_orders'), where('status','in',['draft','sent','partial'])),
     snap => safeSet('kpi-pending-po', snap.size)
   ));
 
-  // ── 3. Dyeing Orders — pending orders + kg ────────────────
+  // ── 5. Dyeing Orders — pending orders + kg ────────────────
   dashUnsubs.push(onSnapshot(collection(db,'dyeing_orders'), snap => {
     let pending = 0, dyeingKg = 0, overdue = 0;
     const now = Date.now();
@@ -231,12 +274,11 @@ function setupRealtimeDashboard() {
     });
     safeSet('kpi-dyeing', fmtNum(dyeingKg) + ' kg');
     safeSet('kpi-dy-pending', pending);
-    // Store overdue in a data attribute so lamination can add to it
     const kpiEl = el('kpi-overdue');
     if (kpiEl) { kpiEl.dataset.dyOverdue = overdue; recalcOverdue(); }
   }));
 
-  // ── 4. Lamination Orders — pending orders + kg ────────────
+  // ── 6. Lamination Orders — pending orders + kg ────────────
   dashUnsubs.push(onSnapshot(collection(db,'lamination_orders'), snap => {
     let pending = 0, lamKg = 0, overdue = 0;
     const now = Date.now();
@@ -254,7 +296,7 @@ function setupRealtimeDashboard() {
     if (kpiEl) { kpiEl.dataset.lmOverdue = overdue; recalcOverdue(); }
   }));
 
-  // ── 5. Job Work — pending issues + kg at workers ──────────
+  // ── 7. Job Work — pending issues + kg at workers ──────────
   dashUnsubs.push(onSnapshot(collection(db,'job_work'), snap => {
     let pending = 0, jwKg = 0, overdue = 0;
     const now = Date.now();
@@ -272,21 +314,15 @@ function setupRealtimeDashboard() {
     if (kpiEl) { kpiEl.dataset.jwOverdue = overdue; recalcOverdue(); }
   }));
 
-  // ── 6. Transfers — processor pending breakdown ────────────
+  // ── 8. Transfers — processor pending breakdown ────────────
   dashUnsubs.push(onSnapshot(collection(db,'transfers'), snap => {
     const map = {};
+    let dyeingT=0, lamT=0, jwT=0, transitT=0;
     snap.forEach(d => {
       const t = d.data();
       if (!['sent','in_process','partial'].includes(t.status)) return;
       const key = t.toLocation || 'Unknown';
       map[key] = (map[key]||0) + Number(t.sentQty||0);
-    });
-    renderProcessorPending(map);
-    // Also build location bars from transfers
-    let dyeingT=0, lamT=0, jwT=0, transitT=0;
-    snap.forEach(d => {
-      const t = d.data();
-      if (!['sent','in_process','partial'].includes(t.status)) return;
       const loc = (t.toLocation||'').toLowerCase();
       const qty = Number(t.sentQty||0);
       if (loc.includes('dye')) dyeingT += qty;
@@ -294,16 +330,17 @@ function setupRealtimeDashboard() {
       else if (loc.includes('job')||loc.includes('worker')) jwT += qty;
       else transitT += qty;
     });
+    renderProcessorPending(map);
     const kpiEl = el('kpi-overdue');
     if (kpiEl) {
       kpiEl.dataset.dyeingTransfer = dyeingT;
-      kpiEl.dataset.lamTransfer = lamT;
-      kpiEl.dataset.jwTransfer = jwT;
-      kpiEl.dataset.transitTransfer = transitT;
+      kpiEl.dataset.lamTransfer    = lamT;
+      kpiEl.dataset.jwTransfer     = jwT;
+      kpiEl.dataset.transitTransfer= transitT;
     }
   }));
 
-  // ── 7. Transactions — recent 8 + today count ──────────────
+  // ── 9. Transactions — recent 8 + today count ──────────────
   dashUnsubs.push(onSnapshot(
     query(collection(db,'transactions'), orderBy('createdAt','desc')),
     snap => {
@@ -322,10 +359,6 @@ function setupRealtimeDashboard() {
       renderRecentTransactions(rows);
     }
   ));
-
-  // ── 8. Location bars update when transfers change (already handled above) ─
-  // Location bars are updated inside the transfers listener (listener 6)
-  // Factory stock bar is handled inside the materials listener (listener 1)
 }
 
 // Helper to sum overdue from all sources
