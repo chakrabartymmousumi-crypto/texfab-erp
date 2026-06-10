@@ -174,21 +174,31 @@ function setupRealtimeDashboard() {
   dashUnsubs.forEach(u => u());
   dashUnsubs = [];
 
-  // ── 1. Materials — total count + low stock + TOTAL AVAILABLE STOCK ──
-  //    currentStock on each material is kept accurate by every runTransaction save
-  //    Sum of all materials.currentStock = total available stock (ground truth)
+  // ── 1. Materials — total count + low stock ─────────────────
+  //    kpi-factory (Total Available Stock) comes from stock ledger listener below
   dashUnsubs.push(onSnapshot(collection(db, 'materials'), snap => {
-    let low = 0, totalMat = 0, totalStock = 0;
+    let low = 0, totalMat = 0;
     snap.forEach(d => {
       const m = d.data();
       totalMat++;
-      totalStock += Number(m.currentStock || 0);
       if (Number(m.reorderLevel||0) > 0 && Number(m.currentStock||0) < Number(m.reorderLevel||0)) low++;
     });
     safeSet('kpi-lowstock', low);
     safeSet('kpi-total-mat', totalMat);
-    safeSet('kpi-factory', fmtNum(totalStock) + ' kg');  // Total Available Stock
     renderLowStockAlerts(snap);
+  }));
+
+  // ── 1a. Total Available Stock — stock ledger sum ───────────
+  //    sum(stockIn) - sum(stockOut) across ALL ledger entries
+  //    Same formula as sk-balance on the stock page — always accurate
+  dashUnsubs.push(onSnapshot(collection(db, 'stock'), snap => {
+    let totalIn = 0, totalOut = 0;
+    snap.forEach(d => {
+      totalIn  += Number(d.data().stockIn  || 0);
+      totalOut += Number(d.data().stockOut || 0);
+    });
+    const netStock = Math.max(0, totalIn - totalOut);
+    safeSet('kpi-factory', fmtNum(netStock) + ' kg');
   }));
 
   // ── 1b. Customers — active clients count ──────────────────
@@ -874,13 +884,15 @@ function loadStock() {
     snap => {
       const tbody = el('stock-summary-tbody');
       if (!tbody) return;
-      let balance = 0, low = 0, total = 0;
-      if (snap.empty) { tbody.innerHTML = emptyRow(8,'No materials found. Add materials in Material Master first.'); return; }
+      let low = 0;
+      if (snap.empty) {
+        tbody.innerHTML = emptyRow(8,'No materials found. Add materials in Material Master first.');
+        safeSet('sk-low', 0);
+        return;
+      }
       tbody.innerHTML = snap.docs.map(d => {
         const m = d.data();
         const isLow = Number(m.currentStock||0) < Number(m.reorderLevel||0) && Number(m.reorderLevel||0) > 0;
-        total++;
-        balance += Number(m.currentStock || 0);
         if (isLow) low++;
         return `<tr>
           <td class="mono c-muted">${m.code||'—'}</td>
@@ -897,31 +909,39 @@ function loadStock() {
           </td>
         </tr>`;
       }).join('');
-      safeSet('sk-total-mat', total);
       safeSet('sk-low', low);
-      // sk-balance is set by unsubLedger (sum of all stockIn - stockOut). Do NOT set here.
+      // sk-balance and sk-total-mat are set by unsubLedger below — do NOT set here
     }
   );
   unsubs.push(unsubMat);
 
-  // ── Full stock ledger — Net Balance = totalIn - totalOut from ALL ledger entries ──
+  // ── Full stock ledger ──────────────────────────────────────────────
+  //    sk-total-mat  = distinct materials that have any stock entry
+  //    sk-total-in   = sum of all stockIn
+  //    sk-total-out  = sum of all stockOut
+  //    sk-balance    = totalIn - totalOut  ← single source of truth, always correct
   const unsubLedger = onSnapshot(
     query(collection(db,'stock'), orderBy('createdAt','desc')),
     snap => {
       const tbody = el('stock-tbody');
       if (!tbody) return;
       let totalIn = 0, totalOut = 0;
+      const distinctMaterials = new Set();
+
       if (snap.empty) {
         tbody.innerHTML = emptyRow(11,'No stock ledger entries yet. Entries are created when you do GRN, Transfers, Dyeing, Lamination, or Job Work.');
-        safeSet('sk-total-in', '0');
+        safeSet('sk-total-in',  '0');
         safeSet('sk-total-out', '0');
-        safeSet('sk-balance', '0');
+        safeSet('sk-balance',   '0');
+        safeSet('sk-total-mat', '0');
         return;
       }
+
       tbody.innerHTML = snap.docs.map(d => {
         const s = d.data();
         totalIn  += Number(s.stockIn  || 0);
         totalOut += Number(s.stockOut || 0);
+        if (s.material) distinctMaterials.add(s.material.trim().toLowerCase());
         return `<tr>
           <td class="c-muted" style="font-size:11.5px">${fmtDate(s.createdAt)}</td>
           <td class="fw5">${s.material||'—'}</td>
@@ -938,12 +958,13 @@ function loadStock() {
           <td><button class="btn btn-danger btn-sm" onclick="deleteStockEntry('${d.id}')">🗑 Del</button></td>
         </tr>`;
       }).join('');
-      // Net Balance = sum of ALL stockIn minus sum of ALL stockOut across the entire ledger
-      // This is the ground truth — unaffected by any stale currentStock values
+
       const netBalance = Math.max(0, totalIn - totalOut);
       safeSet('sk-total-in',  fmtNum(totalIn));
       safeSet('sk-total-out', fmtNum(totalOut));
       safeSet('sk-balance',   fmtNum(netBalance));
+      // Total Materials = distinct material names that appear in the ledger
+      safeSet('sk-total-mat', distinctMaterials.size);
     }
   );
   unsubs.push(unsubLedger);
