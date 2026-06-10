@@ -191,15 +191,18 @@ function setupRealtimeDashboard() {
   // ── 1a. Total Available Stock — stock ledger sum ───────────
   //    sum(stockIn) - sum(stockOut) across ALL ledger entries
   //    Same formula as sk-balance on the stock page — always accurate
-  dashUnsubs.push(onSnapshot(collection(db, 'stock'), snap => {
-    let totalIn = 0, totalOut = 0;
-    snap.forEach(d => {
-      totalIn  += Number(d.data().stockIn  || 0);
-      totalOut += Number(d.data().stockOut || 0);
-    });
-    const netStock = Math.max(0, totalIn - totalOut);
-    safeSet('kpi-factory', fmtNum(netStock) + ' kg');
-  }));
+  dashUnsubs.push(onSnapshot(collection(db, 'stock'),
+    snap => {
+      let totalIn = 0, totalOut = 0;
+      snap.forEach(d => {
+        totalIn  += Number(d.data().stockIn  || 0);
+        totalOut += Number(d.data().stockOut || 0);
+      });
+      const netStock = Math.max(0, totalIn - totalOut);
+      safeSet('kpi-factory', fmtNum(netStock) + ' kg');
+    },
+    err => { console.error('Dashboard stock listener error:', err); }
+  ));
 
   // ── 1b. Customers — active clients count ──────────────────
   dashUnsubs.push(onSnapshot(collection(db, 'customers'), snap => {
@@ -921,7 +924,7 @@ function loadStock() {
   //    sk-total-out  = sum of all stockOut
   //    sk-balance    = totalIn - totalOut  ← single source of truth, always correct
   const unsubLedger = onSnapshot(
-    query(collection(db,'stock'), orderBy('createdAt','desc')),
+    collection(db,'stock'),   // no orderBy — avoids composite index requirement
     snap => {
       const tbody = el('stock-tbody');
       if (!tbody) return;
@@ -929,7 +932,7 @@ function loadStock() {
       const distinctMaterials = new Set();
 
       if (snap.empty) {
-        tbody.innerHTML = emptyRow(11,'No stock ledger entries yet. Entries are created when you do GRN, Transfers, Dyeing, Lamination, or Job Work.');
+        tbody.innerHTML = emptyRow(11,'No stock ledger entries yet.');
         safeSet('sk-total-in',  '0');
         safeSet('sk-total-out', '0');
         safeSet('sk-balance',   '0');
@@ -937,7 +940,14 @@ function loadStock() {
         return;
       }
 
-      tbody.innerHTML = snap.docs.map(d => {
+      // Sort client-side by createdAt desc (avoids needing a Firestore composite index)
+      const docs = snap.docs.slice().sort((a, b) => {
+        const ta = a.data().createdAt?.toMillis?.() || 0;
+        const tb = b.data().createdAt?.toMillis?.() || 0;
+        return tb - ta;
+      });
+
+      tbody.innerHTML = docs.map(d => {
         const s = d.data();
         totalIn  += Number(s.stockIn  || 0);
         totalOut += Number(s.stockOut || 0);
@@ -963,8 +973,12 @@ function loadStock() {
       safeSet('sk-total-in',  fmtNum(totalIn));
       safeSet('sk-total-out', fmtNum(totalOut));
       safeSet('sk-balance',   fmtNum(netBalance));
-      // Total Materials = distinct material names that appear in the ledger
       safeSet('sk-total-mat', distinctMaterials.size);
+    },
+    err => {
+      console.error('Stock ledger listener error:', err);
+      const tbody = el('stock-tbody');
+      if (tbody) tbody.innerHTML = emptyRow(11, 'Error loading stock data: ' + err.message);
     }
   );
   unsubs.push(unsubLedger);
