@@ -899,13 +899,12 @@ function loadStock() {
       }).join('');
       safeSet('sk-total-mat', total);
       safeSet('sk-low', low);
-      // Net Balance on stock page = sum of all materials' currentStock (maintained by all runTransactions)
-      safeSet('sk-balance', fmtNum(balance));
+      // sk-balance is set by unsubLedger (sum of all stockIn - stockOut). Do NOT set here.
     }
   );
   unsubs.push(unsubMat);
 
-  // ── Full stock ledger — shows all movements, totalIn/Out for reference ──
+  // ── Full stock ledger — Net Balance = totalIn - totalOut from ALL ledger entries ──
   const unsubLedger = onSnapshot(
     query(collection(db,'stock'), orderBy('createdAt','desc')),
     snap => {
@@ -916,6 +915,7 @@ function loadStock() {
         tbody.innerHTML = emptyRow(11,'No stock ledger entries yet. Entries are created when you do GRN, Transfers, Dyeing, Lamination, or Job Work.');
         safeSet('sk-total-in', '0');
         safeSet('sk-total-out', '0');
+        safeSet('sk-balance', '0');
         return;
       }
       tbody.innerHTML = snap.docs.map(d => {
@@ -938,9 +938,12 @@ function loadStock() {
           <td><button class="btn btn-danger btn-sm" onclick="deleteStockEntry('${d.id}')">🗑 Del</button></td>
         </tr>`;
       }).join('');
+      // Net Balance = sum of ALL stockIn minus sum of ALL stockOut across the entire ledger
+      // This is the ground truth — unaffected by any stale currentStock values
+      const netBalance = Math.max(0, totalIn - totalOut);
       safeSet('sk-total-in',  fmtNum(totalIn));
       safeSet('sk-total-out', fmtNum(totalOut));
-      // sk-balance is set by unsubMat above (sum of materials.currentStock) — do NOT set here
+      safeSet('sk-balance',   fmtNum(netBalance));
     }
   );
   unsubs.push(unsubLedger);
@@ -968,16 +971,16 @@ window.openAddStockFor = (matName) => {
   el('sk-material').value = matName;
 };
 
-// ── Save stock entry — uses atomic transaction to prevent race conditions ──
+// ── Save stock entry ──────────────────────────────────────────
 window.saveStockEntry = async () => {
-  const material  = el('sk-material').value.trim();
-  const location  = el('sk-location').value;
-  const txnType   = el('sk-txn-type').value;
-  const stockIn   = Number(el('sk-in').value)  || 0;
-  const stockOut  = Number(el('sk-out').value) || 0;
-  const batch     = el('sk-batch').value.trim();
-  const ref       = el('sk-ref').value.trim();
-  const remarks   = el('sk-remarks').value.trim();
+  const material   = el('sk-material').value.trim();
+  const location   = el('sk-location').value;
+  const txnType    = el('sk-txn-type').value;
+  const stockIn    = Number(el('sk-in').value)  || 0;
+  const stockOut   = Number(el('sk-out').value) || 0;
+  const batch      = el('sk-batch').value.trim();
+  const ref        = el('sk-ref').value.trim();
+  const remarks    = el('sk-remarks').value.trim();
   const clientName = el('sk-client').value.trim();
   const poNumber   = el('sk-po').value.trim();
 
@@ -990,25 +993,14 @@ window.saveStockEntry = async () => {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
   try {
-    const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',material)));
-    let newBalance = stockIn - stockOut;
-
-    if (!matSnap.empty) {
-      const matDocRef = doc(db,'materials', matSnap.docs[0].id);
-      await runTransaction(db, async (txn) => {
-        const matDoc = await txn.get(matDocRef);
-        const prevStock = Number(matDoc.exists() ? (matDoc.data().currentStock || 0) : 0);
-        newBalance = prevStock + stockIn - stockOut;
-        txn.update(matDocRef, { currentStock: newBalance, updatedAt: serverTimestamp() });
-      });
-    }
-
+    // Step 1: Add the ledger entry — balance column shows this entry's net
+    const entryBalance = stockIn - stockOut;
     await addDoc(collection(db,'stock'), {
       material, location,
       batch: batch || '',
       lotNumber: batch || '',
       stockIn, stockOut,
-      balance: newBalance,
+      balance: entryBalance,
       transactionType: txnType,
       reference: ref || 'Manual',
       clientName: clientName || '',
@@ -1018,13 +1010,35 @@ window.saveStockEntry = async () => {
       createdBy: currentUser.name || currentUser.email,
     });
 
+    // Step 2: Recalculate material's currentStock by summing ALL ledger entries for this material
+    // This is the correct approach — avoids any stale data issues
+    const allEntries = await getDocs(
+      query(collection(db,'stock'), where('material','==',material))
+    );
+    let totalIn = 0, totalOut = 0;
+    allEntries.forEach(d => {
+      totalIn  += Number(d.data().stockIn  || 0);
+      totalOut += Number(d.data().stockOut || 0);
+    });
+    const currentStock = Math.max(0, totalIn - totalOut);
+
+    // Step 3: Update the material's currentStock with the recalculated value
+    const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',material)));
+    if (!matSnap.empty) {
+      await updateDoc(doc(db,'materials', matSnap.docs[0].id), {
+        currentStock,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
     await logTransaction(txnType, material, stockIn || stockOut, 'kg', 'completed');
-    toast(`✓ Stock entry saved. Balance: ${fmtNum(newBalance)} kg`);
+    toast(`✓ Stock entry saved. Net balance: ${fmtNum(currentStock)} kg`);
     closeModal('stock-modal');
+
   } catch(e) {
     toast('Error saving stock: ' + e.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Save Stock Entry'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '💾 Save Stock Entry'; }
   }
 };
 
