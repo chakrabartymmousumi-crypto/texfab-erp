@@ -468,6 +468,8 @@
         <div class="fg"><label>HSN Code</label><input name="matHsn" placeholder="5603"></div>
         <div class="fg"><label>GST Rate</label><select name="matGst"><option>12%</option><option>18%</option><option>5%</option></select></div>
         <div class="fg"><label>Standard Cost (₹/kg)</label><input name="matCost" type="number" placeholder="0"></div>
+        <div class="fg"><label>Client Name</label><input name="matClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="matPoNumber" placeholder="PO reference number"></div>
       </div>
     </form>
     <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal('mat-modal')">Cancel</button><button class="btn btn-primary" onclick="saveMaterial()">Save Material</button></div>
@@ -488,6 +490,8 @@
         <div class="fg"><label>Phone</label><input name="supPhone" placeholder="98765-43210"></div>
         <div class="fg"><label>Email</label><input name="supEmail" type="email" placeholder="supplier@email.com"></div>
         <div class="fg"><label>Payment Terms</label><input name="supTerms" placeholder="30 days"></div>
+        <div class="fg"><label>Client Name</label><input name="supClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="supPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Address</label><textarea name="supAddress" placeholder="Full address"></textarea></div>
       </div>
     </form>
@@ -532,6 +536,8 @@
         <div class="fg"><label>Stock Out (Kg)</label><input type="number" id="sk-out" placeholder="0" min="0" value="0"></div>
         <div class="fg"><label>Batch / Lot No.</label><input type="text" id="sk-batch" placeholder="e.g. LOT-240601"></div>
         <div class="fg"><label>Reference No.</label><input type="text" id="sk-ref" placeholder="e.g. INV-001"></div>
+        <div class="fg"><label>Client Name</label><input type="text" id="sk-client" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input type="text" id="sk-po" placeholder="PO reference number"></div>
         <div class="fg full"><label>Remarks</label><input type="text" id="sk-remarks" placeholder="Optional notes"></div>
       </div>
       <div style="background:var(--bg-elevated);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--text-secondary)">
@@ -581,6 +587,8 @@
         <div class="fg"><label>Phone</label><input name="jwPhone" placeholder="98765-43210"></div>
         <div class="fg"><label>GST Number</label><input name="jwGst" placeholder="GST number"></div>
         <div class="fg full"><label>Rate Card</label><input name="jwRate" placeholder="₹12/kg or ₹8/piece"></div>
+        <div class="fg"><label>Client Name</label><input name="jwClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="jwPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Address</label><textarea name="jwAddress" placeholder="Full address"></textarea></div>
       </div>
     </form>
@@ -601,6 +609,8 @@
         <div class="fg"><label>Contact Person</label><input name="custContact" placeholder="Name"></div>
         <div class="fg"><label>Phone</label><input name="custPhone" placeholder="98765-43210"></div>
         <div class="fg"><label>Payment Terms</label><input name="custTerms" placeholder="30 days"></div>
+        <div class="fg"><label>Client Name (Internal ref.)</label><input name="custClientName" placeholder="Internal client reference"></div>
+        <div class="fg"><label>PO Number</label><input name="custPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Address</label><textarea name="custAddress" placeholder="Full address"></textarea></div>
       </div>
     </form>
@@ -660,6 +670,8 @@
         <div class="fg"><label>Qty to Send (Kg) *</label><input name="tcQty" type="number" placeholder="0" required></div>
         <div class="fg"><label>Batch / Lot No.</label><input name="tcBatch" placeholder="LOT-XXXXXX"></div>
         <div class="fg"><label>Expected Return Date</label><input name="tcReturn" type="date"></div>
+        <div class="fg"><label>Client Name</label><input name="tcClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="tcPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Remarks</label><input name="tcRemarks" placeholder="Optional notes"></div>
       </div>
     </form>
@@ -698,6 +710,8 @@
         <div class="fg"><label>Shade / Color</label><input name="dyShade" placeholder="Dark Blue / Red"></div>
         <div class="fg"><label>Input Qty (Kg) *</label><input name="dyQty" type="number" placeholder="0" required></div>
         <div class="fg"><label>Expected Return Date</label><input name="dyDate" type="date"></div>
+        <div class="fg"><label>Client Name</label><input name="dyClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="dyPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Remarks</label><input name="dyRemarks" placeholder="Optional notes"></div>
       </div>
     </form>
@@ -737,6 +751,8 @@
         <div class="fg"><label>Lamination Type</label><input name="lmType" placeholder="BOPP / PE / PP"></div>
         <div class="fg"><label>Input Qty (Kg) *</label><input name="lmQty" type="number" placeholder="0" required></div>
         <div class="fg"><label>Expected Return Date</label><input name="lmDate" type="date"></div>
+        <div class="fg"><label>Client Name</label><input name="lmClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="lmPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Remarks</label><input name="lmRemarks" placeholder="Optional notes"></div>
       </div>
     </form>
@@ -775,6 +791,8 @@
         <div class="fg"><label>Issued Qty (Kg) *</label><input name="jwQty" type="number" placeholder="0" required></div>
         <div class="fg"><label>Rate (₹/Kg)</label><input name="jwRate" type="number" placeholder="0"></div>
         <div class="fg"><label>Due Date</label><input name="jwDue" type="date"></div>
+        <div class="fg"><label>Client Name</label><input name="jwClientName" placeholder="Client / Customer name"></div>
+        <div class="fg"><label>PO Number</label><input name="jwPoNumber" placeholder="PO reference number"></div>
         <div class="fg full"><label>Remarks</label><input name="jwRemarks" placeholder="Optional notes"></div>
       </div>
     </form>
