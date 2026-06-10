@@ -174,18 +174,20 @@ function setupRealtimeDashboard() {
   dashUnsubs.forEach(u => u());
   dashUnsubs = [];
 
-  // ── 1. Materials — total count + low stock + factory stock ──
+  // ── 1. Materials — total count + low stock + TOTAL AVAILABLE STOCK ──
+  //    currentStock on each material is kept accurate by every runTransaction save
+  //    Sum of all materials.currentStock = total available stock (ground truth)
   dashUnsubs.push(onSnapshot(collection(db, 'materials'), snap => {
-    let low = 0, totalMat = 0, totalStockKg = 0;
+    let low = 0, totalMat = 0, totalStock = 0;
     snap.forEach(d => {
       const m = d.data();
       totalMat++;
-      totalStockKg += Number(m.currentStock || 0);
+      totalStock += Number(m.currentStock || 0);
       if (Number(m.reorderLevel||0) > 0 && Number(m.currentStock||0) < Number(m.reorderLevel||0)) low++;
     });
     safeSet('kpi-lowstock', low);
     safeSet('kpi-total-mat', totalMat);
-    safeSet('kpi-factory', fmtNum(totalStockKg) + ' kg');
+    safeSet('kpi-factory', fmtNum(totalStock) + ' kg');  // Total Available Stock
     renderLowStockAlerts(snap);
   }));
 
@@ -449,6 +451,8 @@ window.editMaterial = async (id) => {
   f.matHsn.value = m.hsn||'';
   f.matGst.value = m.gstRate||'';
   f.matCost.value = m.stdCost||'';
+  f.matClientName.value = m.clientName||'';
+  f.matPoNumber.value   = m.poNumber||'';
   el('mat-form-id').value = id;
   el('mat-modal-title').textContent = 'Edit Material';
   openModal('mat-modal');
@@ -464,6 +468,8 @@ window.saveMaterial = async () => {
     reorderLevel:Number(f.matReorder.value)||0,
     hsn:f.matHsn.value, gstRate:f.matGst.value,
     stdCost:Number(f.matCost.value)||0,
+    clientName: f.matClientName.value.trim(),
+    poNumber:   f.matPoNumber.value.trim(),
     updatedAt:serverTimestamp(),
   };
   if (!data.name) { toast('Material name is required','error'); return; }
@@ -517,6 +523,7 @@ window.editSupplier = async (id) => {
   f.supCode.value=s.code||''; f.supName.value=s.name||''; f.supGst.value=s.gst||'';
   f.supContact.value=s.contact||''; f.supPhone.value=s.phone||''; f.supEmail.value=s.email||'';
   f.supTerms.value=s.paymentTerms||''; f.supAddress.value=s.address||'';
+  f.supClientName.value=s.clientName||''; f.supPoNumber.value=s.poNumber||'';
   el('sup-form-id').value=id; openModal('sup-modal');
 };
 window.saveSupplier = async () => {
@@ -524,6 +531,7 @@ window.saveSupplier = async () => {
   const data = { code:f.supCode.value.trim(), name:f.supName.value.trim(), gst:f.supGst.value.trim(),
     contact:f.supContact.value.trim(), phone:f.supPhone.value.trim(), email:f.supEmail.value.trim(),
     paymentTerms:f.supTerms.value.trim(), address:f.supAddress.value.trim(),
+    clientName:f.supClientName.value.trim(), poNumber:f.supPoNumber.value.trim(),
     status:'active', updatedAt:serverTimestamp() };
   if (!data.name) { toast('Supplier name required','error'); return; }
   try {
@@ -631,13 +639,16 @@ window.editJobWorker = async (id) => {
   f.jwCode.value=w.code||''; f.jwName.value=w.name||''; f.jwType.value=w.workType||'';
   f.jwContact.value=w.contact||''; f.jwPhone.value=w.phone||''; f.jwGst.value=w.gst||'';
   f.jwRate.value=w.rate||''; f.jwAddress.value=w.address||'';
+  f.jwClientName.value=w.clientName||''; f.jwPoNumber.value=w.poNumber||'';
   el('jw-master-form-id').value=id; openModal('jw-master-modal');
 };
 window.saveJobWorker = async () => {
   const f = el('jw-master-form'); const id = el('jw-master-form-id').value;
   const data = { code:f.jwCode.value.trim(), name:f.jwName.value.trim(), workType:f.jwType.value.trim(),
     contact:f.jwContact.value.trim(), phone:f.jwPhone.value.trim(), gst:f.jwGst.value.trim(),
-    rate:f.jwRate.value, address:f.jwAddress.value.trim(), status:'active', updatedAt:serverTimestamp() };
+    rate:f.jwRate.value, address:f.jwAddress.value.trim(),
+    clientName:f.jwClientName.value.trim(), poNumber:f.jwPoNumber.value.trim(),
+    status:'active', updatedAt:serverTimestamp() };
   if (!data.name) { toast('Job worker name required','error'); return; }
   try {
     if (id) { await updateDoc(doc(db,'job_workers',id), data); toast('Job worker updated'); }
@@ -687,13 +698,17 @@ window.editCustomer = async (id) => {
   const c = snap.data(); const f = el('cust-form');
   f.custCode.value=c.code||''; f.custName.value=c.name||''; f.custGst.value=c.gst||'';
   f.custContact.value=c.contact||''; f.custPhone.value=c.phone||''; f.custTerms.value=c.paymentTerms||'';
-  f.custAddress.value=c.address||''; el('cust-form-id').value=id; openModal('cust-modal');
+  f.custAddress.value=c.address||'';
+  f.custClientName.value=c.clientName||''; f.custPoNumber.value=c.poNumber||'';
+  el('cust-form-id').value=id; openModal('cust-modal');
 };
 window.saveCustomer = async () => {
   const f = el('cust-form'); const id = el('cust-form-id').value;
   const data = { code:f.custCode.value.trim(), name:f.custName.value.trim(), gst:f.custGst.value.trim(),
     contact:f.custContact.value.trim(), phone:f.custPhone.value.trim(), paymentTerms:f.custTerms.value.trim(),
-    address:f.custAddress.value.trim(), updatedAt:serverTimestamp() };
+    address:f.custAddress.value.trim(),
+    clientName:f.custClientName.value.trim(), poNumber:f.custPoNumber.value.trim(),
+    updatedAt:serverTimestamp() };
   if (!data.name) { toast('Customer name required','error'); return; }
   try {
     if (id) { await updateDoc(doc(db,'customers',id), data); toast('Customer updated'); }
@@ -853,19 +868,19 @@ function loadStock() {
     if (dl) { dl.innerHTML = snap.docs.map(d=>`<option value="${d.data().name||''}">`).join(''); }
   });
 
-  // ── Stock summary per material (from materials collection) ──
+  // ── Stock summary per material — reads from materials.currentStock ──
   const unsubMat = onSnapshot(
     query(collection(db,'materials'), orderBy('name')),
     snap => {
       const tbody = el('stock-summary-tbody');
       if (!tbody) return;
-      let totalIn=0, totalOut=0, balance=0, low=0, total=0;
+      let balance = 0, low = 0, total = 0;
       if (snap.empty) { tbody.innerHTML = emptyRow(8,'No materials found. Add materials in Material Master first.'); return; }
       tbody.innerHTML = snap.docs.map(d => {
         const m = d.data();
-        const isLow = Number(m.currentStock||0) < Number(m.reorderLevel||0) && Number(m.reorderLevel||0)>0;
+        const isLow = Number(m.currentStock||0) < Number(m.reorderLevel||0) && Number(m.reorderLevel||0) > 0;
         total++;
-        balance += Number(m.currentStock||0);
+        balance += Number(m.currentStock || 0);
         if (isLow) low++;
         return `<tr>
           <td class="mono c-muted">${m.code||'—'}</td>
@@ -877,30 +892,36 @@ function loadStock() {
           <td>${isLow?'<span class="pill p-red">Low Stock</span>':'<span class="pill p-green">OK</span>'}</td>
           <td>
             <button class="btn btn-secondary btn-sm" onclick="openAddStockFor('${m.name||''}')">
-              <i class="ti ti-plus"></i> Add Entry
+              + Add Entry
             </button>
           </td>
         </tr>`;
       }).join('');
       safeSet('sk-total-mat', total);
-      safeSet('sk-balance', fmtNum(balance));
       safeSet('sk-low', low);
+      // Net Balance on stock page = sum of all materials' currentStock (maintained by all runTransactions)
+      safeSet('sk-balance', fmtNum(balance));
     }
   );
   unsubs.push(unsubMat);
 
-  // ── Full stock ledger ──────────────────────────────────────
+  // ── Full stock ledger — shows all movements, totalIn/Out for reference ──
   const unsubLedger = onSnapshot(
     query(collection(db,'stock'), orderBy('createdAt','desc')),
     snap => {
       const tbody = el('stock-tbody');
       if (!tbody) return;
-      let totalIn=0, totalOut=0;
-      if (snap.empty) { tbody.innerHTML = emptyRow(10,'No stock ledger entries yet. Entries are created when you do GRN, Transfers, Dyeing, Lamination, or Job Work.'); return; }
+      let totalIn = 0, totalOut = 0;
+      if (snap.empty) {
+        tbody.innerHTML = emptyRow(11,'No stock ledger entries yet. Entries are created when you do GRN, Transfers, Dyeing, Lamination, or Job Work.');
+        safeSet('sk-total-in', '0');
+        safeSet('sk-total-out', '0');
+        return;
+      }
       tbody.innerHTML = snap.docs.map(d => {
         const s = d.data();
-        totalIn  += Number(s.stockIn||0);
-        totalOut += Number(s.stockOut||0);
+        totalIn  += Number(s.stockIn  || 0);
+        totalOut += Number(s.stockOut || 0);
         return `<tr>
           <td class="c-muted" style="font-size:11.5px">${fmtDate(s.createdAt)}</td>
           <td class="fw5">${s.material||'—'}</td>
@@ -909,14 +930,17 @@ function loadStock() {
           <td class="mono ${Number(s.stockIn||0)>0?'c-green':''}">${Number(s.stockIn||0)>0?'+'+fmtNum(s.stockIn):'—'}</td>
           <td class="mono ${Number(s.stockOut||0)>0?'c-red':''}">${Number(s.stockOut||0)>0?'−'+fmtNum(s.stockOut):'—'}</td>
           <td class="mono fw5">${fmtNum(s.balance||0)}</td>
+          <td>${s.clientName?`<span class="mono" style="font-size:11px">${s.clientName}</span>`:'—'}</td>
+          <td>${s.poNumber?`<span class="mono" style="font-size:11px">${s.poNumber}</span>`:'—'}</td>
           <td><span class="pill p-gray" style="font-size:10px">${s.transactionType||'—'}</span></td>
           <td class="mono c-muted" style="font-size:11.5px">${s.reference||'—'}</td>
           <td class="c-muted" style="font-size:11px">${s.createdBy||'—'}</td>
           <td><button class="btn btn-danger btn-sm" onclick="deleteStockEntry('${d.id}')">🗑 Del</button></td>
         </tr>`;
       }).join('');
-      safeSet('sk-total-in', fmtNum(totalIn));
+      safeSet('sk-total-in',  fmtNum(totalIn));
       safeSet('sk-total-out', fmtNum(totalOut));
+      // sk-balance is set by unsubMat above (sum of materials.currentStock) — do NOT set here
     }
   );
   unsubs.push(unsubLedger);
@@ -932,6 +956,8 @@ window.openAddStock = () => {
   el('sk-out').value = '0';
   el('sk-batch').value = '';
   el('sk-ref').value = '';
+  el('sk-client').value = '';
+  el('sk-po').value = '';
   el('sk-remarks').value = '';
   openModal('stock-modal');
 };
@@ -944,14 +970,16 @@ window.openAddStockFor = (matName) => {
 
 // ── Save stock entry — uses atomic transaction to prevent race conditions ──
 window.saveStockEntry = async () => {
-  const material = el('sk-material').value.trim();
-  const location = el('sk-location').value;
-  const txnType  = el('sk-txn-type').value;
-  const stockIn  = Number(el('sk-in').value) || 0;
-  const stockOut = Number(el('sk-out').value) || 0;
-  const batch    = el('sk-batch').value.trim();
-  const ref      = el('sk-ref').value.trim();
-  const remarks  = el('sk-remarks').value.trim();
+  const material  = el('sk-material').value.trim();
+  const location  = el('sk-location').value;
+  const txnType   = el('sk-txn-type').value;
+  const stockIn   = Number(el('sk-in').value)  || 0;
+  const stockOut  = Number(el('sk-out').value) || 0;
+  const batch     = el('sk-batch').value.trim();
+  const ref       = el('sk-ref').value.trim();
+  const remarks   = el('sk-remarks').value.trim();
+  const clientName = el('sk-client').value.trim();
+  const poNumber   = el('sk-po').value.trim();
 
   if (!material) { toast('Please enter a material name', 'error'); return; }
   if (!location) { toast('Please select a location', 'error'); return; }
@@ -962,29 +990,19 @@ window.saveStockEntry = async () => {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
   try {
-    // Find the material doc first (outside transaction — just to get docId)
     const matSnap = await getDocs(query(collection(db,'materials'), where('name','==',material)));
-
-    let newBalance = stockIn - stockOut; // fallback if material not found
+    let newBalance = stockIn - stockOut;
 
     if (!matSnap.empty) {
       const matDocRef = doc(db,'materials', matSnap.docs[0].id);
-
-      // Atomic transaction: read current stock → compute new stock → write both atomically
       await runTransaction(db, async (txn) => {
         const matDoc = await txn.get(matDocRef);
         const prevStock = Number(matDoc.exists() ? (matDoc.data().currentStock || 0) : 0);
         newBalance = prevStock + stockIn - stockOut;
-
-        // Update material current stock atomically
-        txn.update(matDocRef, {
-          currentStock: newBalance,
-          updatedAt: serverTimestamp(),
-        });
+        txn.update(matDocRef, { currentStock: newBalance, updatedAt: serverTimestamp() });
       });
     }
 
-    // After transaction succeeds, add ledger entry
     await addDoc(collection(db,'stock'), {
       material, location,
       batch: batch || '',
@@ -993,15 +1011,16 @@ window.saveStockEntry = async () => {
       balance: newBalance,
       transactionType: txnType,
       reference: ref || 'Manual',
+      clientName: clientName || '',
+      poNumber: poNumber || '',
       remarks,
       createdAt: serverTimestamp(),
       createdBy: currentUser.name || currentUser.email,
     });
 
     await logTransaction(txnType, material, stockIn || stockOut, 'kg', 'completed');
-    toast(`✓ Stock entry saved. New balance: ${fmtNum(newBalance)} kg`);
+    toast(`✓ Stock entry saved. Balance: ${fmtNum(newBalance)} kg`);
     closeModal('stock-modal');
-
   } catch(e) {
     toast('Error saving stock: ' + e.message, 'error');
   } finally {
@@ -1056,6 +1075,7 @@ window.saveTransfer = async () => {
     fromLocation:f.tcFrom.value.trim(), toLocation:f.tcTo.value.trim(),
     material:f.tcMaterial.value.trim(), sentQty:Number(f.tcQty.value),
     batch:f.tcBatch.value.trim(), expectedReturn:f.tcReturn.value,
+    clientName:f.tcClientName.value.trim(), poNumber:f.tcPoNumber.value.trim(),
     remarks:f.tcRemarks.value.trim(), status:'sent',
     date:serverTimestamp(), createdAt:serverTimestamp(),
     createdBy:currentUser.name||currentUser.email,
@@ -1182,6 +1202,7 @@ window.saveDyeingOrder = async () => {
     dyeingHouse:f.dyHouse.value.trim(), material:f.dyMaterial.value.trim(),
     shade:f.dyShade.value.trim(), inputQty:Number(f.dyQty.value),
     expectedDate:f.dyDate.value, remarks:f.dyRemarks.value.trim(),
+    clientName:f.dyClientName.value.trim(), poNumber:f.dyPoNumber.value.trim(),
     status:'processing', receivedQty:0, outputQty:0, wastage:0,
     date:serverTimestamp(), createdAt:serverTimestamp(),
     createdBy:currentUser.name||currentUser.email,
@@ -1286,6 +1307,7 @@ window.saveLamination = async () => {
     laminationHouse:f.lmHouse.value.trim(), material:f.lmMaterial.value.trim(),
     laminationType:f.lmType.value.trim(), inputQty:Number(f.lmQty.value),
     expectedDate:f.lmDate.value, remarks:f.lmRemarks.value.trim(),
+    clientName:f.lmClientName.value.trim(), poNumber:f.lmPoNumber.value.trim(),
     status:'processing', receivedQty:0, outputQty:0, wastage:0,
     date:serverTimestamp(), createdAt:serverTimestamp(),
     createdBy:currentUser.name||currentUser.email,
@@ -1393,6 +1415,7 @@ window.saveJobWork = async () => {
     jobWorker:f.jwWorker.value.trim(), material:f.jwMaterial.value.trim(),
     issuedQty:qty, jobRate:rate, jobCharges:qty*rate,
     dueDate:f.jwDue.value, remarks:f.jwRemarks.value.trim(),
+    clientName:f.jwClientName.value.trim(), poNumber:f.jwPoNumber.value.trim(),
     status:'issued', receivedQty:0, wastage:0,
     date:serverTimestamp(), createdAt:serverTimestamp(),
     createdBy:currentUser.name||currentUser.email,
